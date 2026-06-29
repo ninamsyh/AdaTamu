@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'main.dart'; // pakai AppColors yang sudah didefinisikan di main.dart
+<<<<<<< HEAD
 import 'services/auth_service.dart';
+=======
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
 
 /// Warna tambahan khusus dashboard
 class _DashColors {
@@ -137,11 +140,19 @@ class _Sidebar extends StatelessWidget {
             child: SizedBox(
               width: 110,
               child: ElevatedButton.icon(
+<<<<<<< HEAD
                 onPressed: () async {
                   // Tidak perlu Navigator manual: AuthGate di main.dart
                   // otomatis menampilkan LoginPage begitu status auth
                   // berubah jadi "belum login".
                   await AuthService.instance.logout();
+=======
+                onPressed: () {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                    (route) => false,
+                  );
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _DashColors.red,
@@ -274,7 +285,11 @@ class _DashboardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = const [
+<<<<<<< HEAD
       _StatItem(label: 'Total Pelanggan', value: '108'),
+=======
+      _StatItem(label: 'Total Pelanggan', value: '128'),
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
       _StatItem(label: 'Pelanggan Baru', value: '12'),
       _StatItem(label: 'Pelanggan Aktif', value: '96'),
     ];
@@ -364,28 +379,44 @@ class _DataPelangganContent extends StatelessWidget {
       'no': '1',
       'tanggal': '01/06/2026',
       'nama': 'Andi Saputra',
+<<<<<<< HEAD
       'layanan': '',
+=======
+      'layanan': 'Sewa Kamar',
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
       'status': 'Selesai',
     },
     {
       'no': '2',
       'tanggal': '03/06/2026',
       'nama': 'Budi Hartono',
+<<<<<<< HEAD
       'layanan': '',
+=======
+      'layanan': 'Sewa Kamar',
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
       'status': 'Aktif',
     },
     {
       'no': '3',
       'tanggal': '05/06/2026',
       'nama': 'Citra Dewi',
+<<<<<<< HEAD
       'layanan': '',
+=======
+      'layanan': 'Sewa Kamar',
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
       'status': 'Aktif',
     },
     {
       'no': '4',
       'tanggal': '07/06/2026',
       'nama': 'Dewi Lestari',
+<<<<<<< HEAD
       'layanan': 'r',
+=======
+      'layanan': 'Sewa Kamar',
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
       'status': 'Selesai',
     },
   ];

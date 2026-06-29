@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+<<<<<<< HEAD
 import 'package:adatamu/dashboard_page.dart';
+=======
+import 'dashboard_page.dart';
+>>>>>>> 8e279a9325a5f34ff8c08bad3b63a56fa2e88dc2
 
 void main() {
   runApp(const AdaTamuApp());
