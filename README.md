@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# adatamu
+# AdaTamu
 
 A new Flutter project.
 
