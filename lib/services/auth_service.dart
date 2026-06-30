@@ -80,10 +80,17 @@ class AuthService {
       throw AuthServiceException('Semua field wajib diisi.');
     }
 
-    final existing = await _firestore
-        .collection(_usernameCollection)
-        .doc(usernameKey)
-        .get();
+    DocumentSnapshot<Map<String, dynamic>> existing;
+    try {
+      existing = await _firestore
+          .collection(_usernameCollection)
+          .doc(usernameKey)
+          .get();
+    } catch (e) {
+      // ignore: avoid_print
+      print('DEBUG Firestore read (cek username) error: $e');
+      throw AuthServiceException('Gagal memeriksa username, coba lagi.');
+    }
     if (existing.exists) {
       throw AuthServiceException('Username sudah digunakan, pilih yang lain.');
     }
@@ -95,6 +102,8 @@ class AuthService {
         password: password,
       );
     } on FirebaseAuthException catch (e) {
+      // ignore: avoid_print
+      print('DEBUG createUserWithEmailAndPassword error: ${e.code} - ${e.message}');
       throw AuthServiceException(_mapErrorMessage(e));
     }
 
@@ -105,6 +114,8 @@ class AuthService {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
+      // ignore: avoid_print
+      print('DEBUG Firestore write error: $e');
       // Kalau gagal nulis mapping username, hapus akun auth yang baru
       // dibuat supaya tidak ada akun "nyangkut" tanpa username.
       await credential.user?.delete();

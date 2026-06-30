@@ -9,7 +9,9 @@ import 'services/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const AdaTamuApp());
 }
 
@@ -88,7 +90,10 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthService.instance.login(username: username, password: password);
+      await AuthService.instance.login(
+        username: username,
+        password: password,
+      );
       // Tidak perlu Navigator di sini: AuthGate otomatis menampilkan
       // DashboardPage begitu authStateChanges mendeteksi user login.
     } on AuthServiceException catch (e) {
@@ -108,9 +113,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _goToRegister() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const RegisterPage()));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const RegisterPage()),
+    );
   }
 
   @override

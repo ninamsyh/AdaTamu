@@ -46,7 +46,11 @@ class _RegisterPageState extends State<RegisterPage> {
       if (mounted) Navigator.of(context).pop();
     } on AuthServiceException catch (e) {
       _showError(e.message);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('DEBUG register_page catch(e): $e');
+      // ignore: avoid_print
+      print('DEBUG stackTrace: $stackTrace');
       _showError('Gagal mendaftar, coba lagi.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -129,8 +133,9 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                     ),
-                    validator: (v) =>
-                        (v == null || v.length < 6) ? 'Minimal 6 karakter' : null,
+                    validator: (v) => (v == null || v.length < 6)
+                        ? 'Minimal 6 karakter'
+                        : null,
                   ),
                   const SizedBox(height: 24),
                   SizedBox(

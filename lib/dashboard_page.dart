@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'main.dart'; // pakai AppColors yang sudah didefinisikan di main.dart
 import 'services/auth_service.dart';
-
+import 'utils/csv_downloader.dart';
+  
 /// Warna tambahan khusus dashboard
 class _DashColors {
   static const sidebarDark = AppColors.navy; // navy gelap
@@ -30,6 +32,65 @@ class _DashboardPageState extends State<DashboardPage> {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
+  }
+
+  void _handleDownload(BuildContext context) {
+    if (!kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unduh data saat ini hanya tersedia di versi web (Chrome/Edge).',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final String csv;
+    final String filename;
+
+    if (_selectedIndex == 1) {
+      // Halaman Data Pelanggan: unduh seluruh baris tabel.
+      final buffer = StringBuffer();
+      buffer.writeln('No,Tanggal,Nama,Jenis Layanan,Status');
+      for (final row in _DataPelangganContent.rows) {
+        buffer.writeln(
+          [
+            row['no'],
+            row['tanggal'],
+            row['nama'],
+            row['layanan'],
+            row['status'],
+          ].map(_csvEscape).join(','),
+        );
+      }
+      csv = buffer.toString();
+      filename = 'data_pelanggan.csv';
+    } else {
+      // Halaman Dashboard: unduh ringkasan statistik.
+      final buffer = StringBuffer();
+      buffer.writeln('Label,Nilai');
+      for (final stat in _DashboardContent.stats) {
+        buffer.writeln('${_csvEscape(stat.label)},${_csvEscape(stat.value)}');
+      }
+      csv = buffer.toString();
+      filename = 'ringkasan_dashboard.csv';
+    }
+
+    downloadCsv(filename, csv);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Mengunduh $filename...')),
+    );
+  }
+
+  /// Bungkus nilai dengan tanda kutip kalau mengandung koma, kutip,
+  /// atau baris baru, supaya format CSV tetap valid.
+  String _csvEscape(Object? value) {
+    final text = (value ?? '').toString();
+    if (text.contains(',') || text.contains('"') || text.contains('\n')) {
+      return '"${text.replaceAll('"', '""')}"';
+    }
+    return text;
   }
 
   @override
@@ -70,6 +131,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: _menuTitles[_selectedIndex],
                         searchController: _searchController,
                         showMenuButton: !isWide,
+                        onDownload: () => _handleDownload(context),
                       ),
                       Expanded(
                         child: _selectedIndex == 0
@@ -209,11 +271,13 @@ class _TopBar extends StatelessWidget {
   final String title;
   final TextEditingController searchController;
   final bool showMenuButton;
+  final VoidCallback onDownload;
 
   const _TopBar({
     required this.title,
     required this.searchController,
     required this.showMenuButton,
+    required this.onDownload,
   });
 
   @override
@@ -254,7 +318,11 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          const Icon(Icons.notifications_none, color: Colors.white),
+          IconButton(
+            icon: const Icon(Icons.download_outlined, color: Colors.white),
+            tooltip: 'Unduh data sebagai CSV',
+            onPressed: onDownload,
+          ),
           const SizedBox(width: 12),
           const Icon(
             Icons.calendar_today_outlined,
@@ -271,14 +339,14 @@ class _TopBar extends StatelessWidget {
 class _DashboardContent extends StatelessWidget {
   const _DashboardContent();
 
+  static const stats = [
+    _StatItem(label: 'Total Pelanggan', value: '128'),
+    _StatItem(label: 'Pelanggan Baru', value: '12'),
+    _StatItem(label: 'Pelanggan Aktif', value: '96'),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final stats = const [
-      _StatItem(label: 'Total Pelanggan', value: '128'),
-      _StatItem(label: 'Pelanggan Baru', value: '12'),
-      _StatItem(label: 'Pelanggan Aktif', value: '96'),
-    ];
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: LayoutBuilder(
@@ -359,7 +427,7 @@ class _DataPelangganContent extends StatelessWidget {
   const _DataPelangganContent();
 
   // Data contoh, ganti dengan data asli dari API/database
-  static const _rows = [
+  static const rows = [
     {
       'no': '1',
       'tanggal': '01/06/2026',
@@ -417,7 +485,7 @@ class _DataPelangganContent extends StatelessWidget {
               DataColumn(label: Text('Jenis Layanan')),
               DataColumn(label: Text('Status')),
             ],
-            rows: _rows
+            rows: rows
                 .map(
                   (r) => DataRow(
                     cells: [

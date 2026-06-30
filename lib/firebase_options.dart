@@ -1,19 +1,12 @@
-// File ini biasanya dibuat OTOMATIS dengan menjalankan:
+// File ini berisi kredensial Firebase asli untuk project "adatamu-bd8c1".
+// Diisi manual berdasarkan Project settings -> Your apps di Firebase Console.
 //
-//   flutterfire configure
-//
-// di root project ini (folder yang sejajar dengan pubspec.yaml). Itu cara
-// PALING DIREKOMENDASIKAN karena flutterfire akan login ke akun Firebase
-// kamu dan mengisi semua nilai di bawah secara otomatis untuk tiap platform.
-//
-// Untuk sementara, ini cuma PLACEHOLDER agar project tetap bisa dibuka/
-// dianalisis. Ganti semua 'TODO_GANTI_...' dengan nilai asli dari:
-// Firebase Console -> (pilih project) -> ikon gear -> Project settings
-// -> scroll ke bagian "Your apps" -> pilih app yang sesuai platform
-//    (atau klik "Add app" kalau belum ada)
-// -> salin nilai apiKey, appId, messagingSenderId, projectId, dst.
-//
-// JANGAN commit file ini (dengan nilai asli) ke repo publik.
+// Catatan: nilai untuk Android/iOS/macOS di bawah masih disalin dari
+// konfigurasi Web sebagai sementara supaya project tetap bisa di-build.
+// Kalau nanti mau jalankan di Android/iOS asli, sebaiknya isi ulang
+// bagian itu dengan appId masing-masing platform (lihat google-services.json
+// untuk Android, atau GoogleService-Info.plist untuk iOS), karena appId
+// platform native BEDA dari appId web.
 
 // ignore_for_file: type=lint
 
@@ -21,14 +14,6 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// Pilihan konfigurasi Firebase berdasarkan platform yang sedang berjalan.
-///
-/// Pakai seperti ini di main.dart:
-/// ```dart
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -45,8 +30,7 @@ class DefaultFirebaseOptions {
         return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
-          'DefaultFirebaseOptions belum dikonfigurasi untuk Linux. '
-          'Jalankan `flutterfire configure` untuk menambahkan platform ini.',
+          'DefaultFirebaseOptions belum dikonfigurasi untuk Linux.',
         );
       default:
         throw UnsupportedError(
@@ -56,46 +40,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'TODO_GANTI_API_KEY',
-    appId: 'TODO_GANTI_APP_ID',
-    messagingSenderId: 'TODO_GANTI_SENDER_ID',
-    projectId: 'TODO_GANTI_PROJECT_ID',
-    authDomain: 'TODO_GANTI_PROJECT_ID.firebaseapp.com',
-    storageBucket: 'TODO_GANTI_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyDNG_cqV-T25IUA64_3ME9xur1vvSlGr3g',
+    authDomain: 'adatamu-bd8c1.firebaseapp.com',
+    projectId: 'adatamu-bd8c1',
+    storageBucket: 'adatamu-bd8c1.firebasestorage.app',
+    messagingSenderId: '151667984588',
+    appId: '1:151667984588:web:4f368a5bed1fb8a3149a69',
   );
 
+  // Sementara pakai config web yang sama. Ganti appId di bawah dengan
+  // appId Android asli (lihat Project settings -> Android app) kalau
+  // mau jalankan di emulator/HP Android.
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'TODO_GANTI_API_KEY',
-    appId: 'TODO_GANTI_APP_ID',
-    messagingSenderId: 'TODO_GANTI_SENDER_ID',
-    projectId: 'TODO_GANTI_PROJECT_ID',
-    storageBucket: 'TODO_GANTI_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyDNG_cqV-T25IUA64_3ME9xur1vvSlGr3g',
+    appId: '1:151667984588:android:5c18c0b6eafd1055149a69',
+    messagingSenderId: '151667984588',
+    projectId: 'adatamu-bd8c1',
+    storageBucket: 'adatamu-bd8c1.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'TODO_GANTI_API_KEY',
-    appId: 'TODO_GANTI_APP_ID',
-    messagingSenderId: 'TODO_GANTI_SENDER_ID',
-    projectId: 'TODO_GANTI_PROJECT_ID',
-    storageBucket: 'TODO_GANTI_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyDNG_cqV-T25IUA64_3ME9xur1vvSlGr3g',
+    appId: '1:151667984588:web:4f368a5bed1fb8a3149a69',
+    messagingSenderId: '151667984588',
+    projectId: 'adatamu-bd8c1',
+    storageBucket: 'adatamu-bd8c1.firebasestorage.app',
     iosBundleId: 'com.example.adatamu',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'TODO_GANTI_API_KEY',
-    appId: 'TODO_GANTI_APP_ID',
-    messagingSenderId: 'TODO_GANTI_SENDER_ID',
-    projectId: 'TODO_GANTI_PROJECT_ID',
-    storageBucket: 'TODO_GANTI_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyDNG_cqV-T25IUA64_3ME9xur1vvSlGr3g',
+    appId: '1:151667984588:web:4f368a5bed1fb8a3149a69',
+    messagingSenderId: '151667984588',
+    projectId: 'adatamu-bd8c1',
+    storageBucket: 'adatamu-bd8c1.firebasestorage.app',
     iosBundleId: 'com.example.adatamu',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'TODO_GANTI_API_KEY',
-    appId: 'TODO_GANTI_APP_ID',
-    messagingSenderId: 'TODO_GANTI_SENDER_ID',
-    projectId: 'TODO_GANTI_PROJECT_ID',
-    authDomain: 'TODO_GANTI_PROJECT_ID.firebaseapp.com',
-    storageBucket: 'TODO_GANTI_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyDNG_cqV-T25IUA64_3ME9xur1vvSlGr3g',
+    authDomain: 'adatamu-bd8c1.firebaseapp.com',
+    projectId: 'adatamu-bd8c1',
+    storageBucket: 'adatamu-bd8c1.firebasestorage.app',
+    messagingSenderId: '151667984588',
+    appId: '1:151667984588:web:4f368a5bed1fb8a3149a69',
   );
 }
