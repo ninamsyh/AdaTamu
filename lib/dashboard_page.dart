@@ -9,7 +9,9 @@ import 'utils/csv_downloader.dart';
 
 /// Model satu baris data tamu, dipetakan dari dokumen di collection
 /// `guests` (Firestore). SENGAJA cuma "membaca" collection ini — dashboard
-/// admin tidak pernah menulis/mengubah struktur `guests`.
+/// admin tidak pernah menulis/mengubah struktur `guests`, kecuali field
+/// `status` dan `selesaiAt` yang memang sengaja ditulis balik oleh admin
+/// lewat badge status.
 ///
 /// Catatan nama field: disesuaikan dengan field yang dipakai form tamu.
 /// Kalau nanti field aslinya beda nama, tinggal ganti key di
@@ -26,6 +28,11 @@ class GuestRecord {
   final String keteranganTambahan;
   final String? fotoUrl;
   final String status;
+  // Waktu tamu mengisi/submit form (dipakai untuk kolom "Waktu Masuk").
+  final DateTime? waktuMasuk;
+  // Waktu admin menandai status jadi "selesai" (dipakai untuk kolom
+  // "Waktu Selesai"). Null selama status masih "menunggu".
+  final DateTime? waktuSelesai;
 
   const GuestRecord({
     required this.id,
@@ -38,7 +45,11 @@ class GuestRecord {
     required this.keteranganTambahan,
     required this.fotoUrl,
     required this.status,
+    required this.waktuMasuk,
+    required this.waktuSelesai,
   });
+
+  bool get sudahSelesai => status.toLowerCase() == 'selesai';
 
   factory GuestRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -57,6 +68,11 @@ class GuestRecord {
       ),
       fotoUrl: (data['fotoUrl'] ?? data['foto']) as String?,
       status: _str(data['status']),
+      // "Waktu Masuk" = saat tamu submit form -> selalu ambil dari
+      // createdAt (timestamp server), bukan dari tanggalKunjungan (yang
+      // biasanya cuma tanggal tanpa jam).
+      waktuMasuk: _parseTanggal(data['createdAt']),
+      waktuSelesai: _parseTanggal(data['selesaiAt']),
     );
   }
 
@@ -153,7 +169,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final buffer = StringBuffer();
       buffer.writeln(
         'No,Tanggal,Kode Tamu,Nama Lengkap,Jenis Kelamin,Alamat Lengkap,'
-        'Keperluan,Keterangan Tambahan,Foto,Status',
+        'Keperluan,Keterangan Tambahan,Foto,Status,Waktu Masuk,Waktu Selesai',
       );
       final f = DateFormat('dd/MM/yyyy HH:mm');
       for (var i = 0; i < _currentGuestRows.length; i++) {
@@ -170,6 +186,8 @@ class _DashboardPageState extends State<DashboardPage> {
             row.keteranganTambahan,
             row.fotoUrl ?? '-',
             row.status,
+            row.waktuMasuk != null ? f.format(row.waktuMasuk!) : '-',
+            row.waktuSelesai != null ? f.format(row.waktuSelesai!) : '-',
           ].map(_csvEscape).join(','),
         );
       }
@@ -726,14 +744,56 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     );
   }
 
-  Future<void> _bukaEditDialog(BuildContext context, GuestRecord guest) async {
-    final berhasil = await showDialog<bool>(
+  /// Tandai tamu sebagai "selesai". Ini SEKALI JALAN saja (one-shot):
+  /// begitu status berubah jadi "selesai", badge tidak bisa diklik lagi,
+  /// jadi tidak ada jalan untuk mengembalikannya ke "menunggu" dari UI.
+  /// Waktu penyelesaian dicatat di field `selesaiAt` (server timestamp)
+  /// supaya tercatat kapan tepatnya admin menyelesaikannya.
+  Future<void> _tandaiSelesai(BuildContext context, GuestRecord guest) async {
+    // Jaga-jaga: kalau entah bagaimana sudah selesai, jangan tulis ulang.
+    if (guest.sudahSelesai) return;
+
+    final konfirmasi = await showDialog<bool>(
       context: context,
-      builder: (_) => _EditGuestDialog(guest: guest),
+      builder: (_) => AlertDialog(
+        title: const Text('Tandai Selesai'),
+        content: Text(
+          'Tandai keperluan "${guest.namaLengkap}" sebagai selesai?\n\n'
+          'Status ini tidak bisa diubah kembali ke "menunggu" setelah disimpan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Selesai'),
+          ),
+        ],
+      ),
     );
-    if (berhasil == true && mounted) {
+    if (konfirmasi != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('guests')
+          .doc(guest.id)
+          .update({
+            'status': 'selesai',
+            'selesaiAt': FieldValue.serverTimestamp(),
+          });
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Data tamu berhasil diperbarui.')),
+        SnackBar(
+          content: Text('Gagal mengubah status: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -762,8 +822,7 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
       builder: (context, constraints) {
         // Breakpoint khusus konten ini: di layar sempit (mis. HP), tabel
         // horizontal-scroll susah dipakai, jadi ditampilkan sebagai daftar
-        // kartu (satu tamu = satu kartu) supaya tetap enak dibaca & tetap
-        // ada tombol Edit di tiap barisnya.
+        // kartu (satu tamu = satu kartu) supaya tetap enak dibaca.
         final narrow = constraints.maxWidth < 700;
 
         return SingleChildScrollView(
@@ -821,7 +880,7 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                       child: _GuestCard(
                         nomor: i + 1,
                         guest: r,
-                        onEdit: () => _bukaEditDialog(context, r),
+                        onTandaiSelesai: () => _tandaiSelesai(context, r),
                         onFotoTap: r.fotoUrl == null
                             ? null
                             : () => _bukaFotoDialog(context, r.fotoUrl!),
@@ -858,12 +917,14 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                         DataColumn(label: Text('Keperluan')),
                         DataColumn(label: Text('Keterangan Tambahan')),
                         DataColumn(label: Text('Foto')),
+                        DataColumn(label: Text('Waktu Masuk')),
+                        DataColumn(label: Text('Waktu Selesai')),
                         DataColumn(label: Text('Status')),
-                        DataColumn(label: Text('Aksi')),
                       ],
                       rows: List<DataRow>.generate(dataTerfilter.length, (i) {
                         final r = dataTerfilter[i];
                         final tanggalFmt = DateFormat('dd/MM/yyyy');
+                        final waktuFmt = DateFormat('dd/MM/yyyy HH:mm');
                         return DataRow(
                           cells: [
                             DataCell(Text('${i + 1}')),
@@ -947,13 +1008,26 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                                       ),
                                     ),
                             ),
-                            DataCell(_StatusBadge(status: r.status)),
                             DataCell(
-                              IconButton(
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                tooltip: 'Edit data tamu',
-                                color: AppColors.teal,
-                                onPressed: () => _bukaEditDialog(context, r),
+                              Text(
+                                r.waktuMasuk != null
+                                    ? waktuFmt.format(r.waktuMasuk!)
+                                    : '-',
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                r.waktuSelesai != null
+                                    ? waktuFmt.format(r.waktuSelesai!)
+                                    : '-',
+                              ),
+                            ),
+                            DataCell(
+                              _StatusBadge(
+                                status: r.status,
+                                onTap: r.sudahSelesai
+                                    ? null
+                                    : () => _tandaiSelesai(context, r),
                               ),
                             ),
                           ],
@@ -975,19 +1049,20 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
 class _GuestCard extends StatelessWidget {
   final int nomor;
   final GuestRecord guest;
-  final VoidCallback onEdit;
+  final VoidCallback onTandaiSelesai;
   final VoidCallback? onFotoTap;
 
   const _GuestCard({
     required this.nomor,
     required this.guest,
-    required this.onEdit,
+    required this.onTandaiSelesai,
     this.onFotoTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final tanggalFmt = DateFormat('dd/MM/yyyy');
+    final waktuFmt = DateFormat('dd/MM/yyyy HH:mm');
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1064,12 +1139,9 @@ class _GuestCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _StatusBadge(status: guest.status),
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                tooltip: 'Edit data tamu',
-                color: AppColors.teal,
-                onPressed: onEdit,
+              _StatusBadge(
+                status: guest.status,
+                onTap: guest.sudahSelesai ? null : onTandaiSelesai,
               ),
             ],
           ),
@@ -1086,6 +1158,18 @@ class _GuestCard extends StatelessWidget {
           _CardField(
             label: 'Keterangan Tambahan',
             value: guest.keteranganTambahan,
+          ),
+          _CardField(
+            label: 'Waktu Masuk',
+            value: guest.waktuMasuk != null
+                ? waktuFmt.format(guest.waktuMasuk!)
+                : '-',
+          ),
+          _CardField(
+            label: 'Waktu Selesai',
+            value: guest.waktuSelesai != null
+                ? waktuFmt.format(guest.waktuSelesai!)
+                : '-',
           ),
         ],
       ),
@@ -1123,254 +1207,60 @@ class _CardField extends StatelessWidget {
   }
 }
 
-/// Dialog form untuk mengedit satu baris data tamu di collection `guests`.
-/// Field `tanggal`, `kodeTamu`, dan `foto` SENGAJA tidak bisa diedit di
-/// sini (dianggap data asal dari form tamu / sistem), yang bisa diubah
-/// admin hanya field deskriptif + status.
-class _EditGuestDialog extends StatefulWidget {
-  final GuestRecord guest;
-  const _EditGuestDialog({required this.guest});
-
-  @override
-  State<_EditGuestDialog> createState() => _EditGuestDialogState();
-}
-
-class _EditGuestDialogState extends State<_EditGuestDialog> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _namaController;
-  late final TextEditingController _jenisKelaminController;
-  late final TextEditingController _alamatController;
-  late final TextEditingController _keperluanController;
-  late final TextEditingController _keteranganController;
-  late final TextEditingController _statusController;
-  bool _saving = false;
-
-  String _clean(String v) => v == '-' ? '' : v;
-
-  @override
-  void initState() {
-    super.initState();
-    final g = widget.guest;
-    _namaController = TextEditingController(text: _clean(g.namaLengkap));
-    _jenisKelaminController = TextEditingController(
-      text: _clean(g.jenisKelamin),
-    );
-    _alamatController = TextEditingController(text: _clean(g.alamatLengkap));
-    _keperluanController = TextEditingController(text: _clean(g.keperluan));
-    _keteranganController = TextEditingController(
-      text: _clean(g.keteranganTambahan),
-    );
-    _statusController = TextEditingController(text: _clean(g.status));
-  }
-
-  @override
-  void dispose() {
-    _namaController.dispose();
-    _jenisKelaminController.dispose();
-    _alamatController.dispose();
-    _keperluanController.dispose();
-    _keteranganController.dispose();
-    _statusController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleSave() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
-    try {
-      await FirebaseFirestore.instance
-          .collection('guests')
-          .doc(widget.guest.id)
-          .update({
-            'nama': _namaController.text.trim(),
-            'jenisKelamin': _jenisKelaminController.text.trim(),
-            'alamat': _alamatController.text.trim(),
-            'keperluan': _keperluanController.text.trim(),
-            'keteranganTambahan': _keteranganController.text.trim(),
-            'status': _statusController.text.trim(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menyimpan perubahan: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Edit Data Tamu',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.darkText,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(context).pop(false),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'Kode Tamu: ${widget.guest.kodeTamu}',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _namaController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nama Lengkap',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Nama wajib diisi'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _jenisKelaminController,
-                    decoration: const InputDecoration(
-                      labelText: 'Jenis Kelamin',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _alamatController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Alamat Lengkap',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _keperluanController,
-                    decoration: const InputDecoration(
-                      labelText: 'Keperluan',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _keteranganController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Keterangan Tambahan',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _statusController,
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
-                      helperText: 'Contoh: Menunggu, Disetujui, Ditolak',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(context).pop(false),
-                        child: const Text('Batal'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _saving ? null : _handleSave,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.teal,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Simpan'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+/// Badge status. Kalau [onTap] diberikan (artinya status masih
+/// "menunggu"), badge bisa diklik SEKALI untuk menandai selesai — begitu
+/// status jadi "selesai", parent akan mengoper `onTap: null` sehingga
+/// badge otomatis tidak bisa diklik lagi (one-shot, tidak ada jalan balik
+/// dari UI).
 class _StatusBadge extends StatelessWidget {
   final String status;
-  const _StatusBadge({required this.status});
+  final VoidCallback? onTap;
+  const _StatusBadge({required this.status, this.onTap});
+
+  bool get _isSelesai => status.toLowerCase() == 'selesai';
 
   @override
   Widget build(BuildContext context) {
-    final key = status.toLowerCase();
-    final Color color;
-    switch (key) {
-      case 'aktif':
-      case 'diterima':
-      case 'disetujui':
-        color = Colors.green;
-        break;
-      case 'menunggu':
-      case 'pending':
-        color = Colors.orange;
-        break;
-      case 'ditolak':
-        color = Colors.red;
-        break;
-      default:
-        color = Colors.grey;
-    }
-    return Container(
+    final color = _isSelesai ? Colors.green : Colors.orange;
+    final label = _isSelesai ? 'selesai' : 'menunggu';
+    final bisaDiklik = onTap != null;
+
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(12),
+        border: bisaDiklik
+            ? Border.all(color: color.withOpacity(0.4), width: 1)
+            : null,
       ),
-      child: Text(
-        status,
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (bisaDiklik) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.check_circle_outline, size: 12, color: color),
+          ],
+        ],
+      ),
+    );
+
+    if (!bisaDiklik) return badge;
+
+    return Tooltip(
+      message: 'Ketuk untuk tandai selesai (tidak bisa dibatalkan)',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: badge,
       ),
     );
   }
