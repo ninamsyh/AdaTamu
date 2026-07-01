@@ -1,9 +1,85 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // pastikan package 'intl' sudah ada di pubspec.yaml
+import 'admin_profile_page.dart';
 import 'main.dart'; // pakai AppColors yang sudah didefinisikan di main.dart
 import 'services/auth_service.dart';
 import 'utils/csv_downloader.dart';
-  
+
+/// Model satu baris data tamu, dipetakan dari dokumen di collection
+/// `guests` (Firestore). SENGAJA cuma "membaca" collection ini — dashboard
+/// admin tidak pernah menulis/mengubah struktur `guests`.
+///
+/// Catatan nama field: disesuaikan dengan field yang dipakai form tamu.
+/// Kalau nanti field aslinya beda nama, tinggal ganti key di
+/// `GuestRecord.fromDoc` di bawah ini saja — bagian lain tidak perlu
+/// diubah.
+class GuestRecord {
+  final String id;
+  final DateTime? tanggal;
+  final String kodeTamu;
+  final String namaLengkap;
+  final String jenisKelamin;
+  final String alamatLengkap;
+  final String keperluan;
+  final String keteranganTambahan;
+  final String? fotoUrl;
+  final String status;
+
+  const GuestRecord({
+    required this.id,
+    required this.tanggal,
+    required this.kodeTamu,
+    required this.namaLengkap,
+    required this.jenisKelamin,
+    required this.alamatLengkap,
+    required this.keperluan,
+    required this.keteranganTambahan,
+    required this.fotoUrl,
+    required this.status,
+  });
+
+  factory GuestRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return GuestRecord(
+      id: doc.id,
+      // Coba field 'tanggalKunjungan' dulu, kalau tidak ada fallback ke
+      // 'createdAt' (waktu server saat dokumen dibuat).
+      tanggal: _parseTanggal(data['tanggalKunjungan'] ?? data['createdAt']),
+      kodeTamu: _str(data['kodeTamu']),
+      namaLengkap: _str(data['nama']),
+      jenisKelamin: _str(data['jenisKelamin']),
+      alamatLengkap: _str(data['alamat']),
+      keperluan: _str(data['keperluan']),
+      keteranganTambahan: _str(
+        data['keteranganTambahan'] ?? data['keterangan'],
+      ),
+      fotoUrl: (data['fotoUrl'] ?? data['foto']) as String?,
+      status: _str(data['status']),
+    );
+  }
+
+  static String _str(dynamic value) {
+    final s = value?.toString().trim() ?? '';
+    return s.isEmpty ? '-' : s;
+  }
+
+  static DateTime? _parseTanggal(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      try {
+        return DateFormat('dd/MM/yyyy').parse(value);
+      } catch (_) {}
+      try {
+        return DateTime.parse(value);
+      } catch (_) {}
+    }
+    return null;
+  }
+}
+
 /// Warna tambahan khusus dashboard
 class _DashColors {
   static const sidebarDark = AppColors.navy; // navy gelap
@@ -21,16 +97,40 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  int _selectedIndex = 0; // 0 = Dashboard, 1 = Data Pelanggan
+  // 0 = Dashboard, 1 = Data Pelanggan, 2 = Profil Admin
+  int _selectedIndex = 0;
   final _searchController = TextEditingController();
 
-  static const _menuTitles = ['Dashboard', 'Data Pelanggan'];
+  // Baris tamu (guests) yang sedang tampil di tabel Data Pelanggan
+  // (setelah difilter tanggal). Dipakai supaya tombol download CSV bisa
+  // mengekspor data ASLI yang sedang dilihat admin, bukan data statis.
+  List<GuestRecord> _currentGuestRows = const [];
+
+  // ===== State filter tanggal (dipakai khusus halaman Data Pelanggan) =====
+  DateTime? _tanggalDipilih;
+  DateTimeRange? _rentangTanggal;
+
+  static const _menuTitles = ['Dashboard', 'Data Pelanggan', 'Profil'];
 
   void _selectMenu(int index) {
     setState(() => _selectedIndex = index);
-    // Tutup drawer otomatis kalau lagi dibuka (mode mobile)
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _bukaDatePicker(BuildContext context) async {
+    final hasil = await showDatePicker(
+      context: context,
+      initialDate: _tanggalDipilih ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (hasil != null) {
+      setState(() {
+        _tanggalDipilih = hasil;
+        _rentangTanggal = null;
+      });
     }
   }
 
@@ -50,24 +150,32 @@ class _DashboardPageState extends State<DashboardPage> {
     final String filename;
 
     if (_selectedIndex == 1) {
-      // Halaman Data Pelanggan: unduh seluruh baris tabel.
       final buffer = StringBuffer();
-      buffer.writeln('No,Tanggal,Nama,Jenis Layanan,Status');
-      for (final row in _DataPelangganContent.rows) {
+      buffer.writeln(
+        'No,Tanggal,Kode Tamu,Nama Lengkap,Jenis Kelamin,Alamat Lengkap,'
+        'Keperluan,Keterangan Tambahan,Foto,Status',
+      );
+      final f = DateFormat('dd/MM/yyyy HH:mm');
+      for (var i = 0; i < _currentGuestRows.length; i++) {
+        final row = _currentGuestRows[i];
         buffer.writeln(
           [
-            row['no'],
-            row['tanggal'],
-            row['nama'],
-            row['layanan'],
-            row['status'],
+            i + 1,
+            row.tanggal != null ? f.format(row.tanggal!) : '-',
+            row.kodeTamu,
+            row.namaLengkap,
+            row.jenisKelamin,
+            row.alamatLengkap,
+            row.keperluan,
+            row.keteranganTambahan,
+            row.fotoUrl ?? '-',
+            row.status,
           ].map(_csvEscape).join(','),
         );
       }
       csv = buffer.toString();
       filename = 'data_pelanggan.csv';
     } else {
-      // Halaman Dashboard: unduh ringkasan statistik.
       final buffer = StringBuffer();
       buffer.writeln('Label,Nilai');
       for (final stat in _DashboardContent.stats) {
@@ -78,13 +186,11 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     downloadCsv(filename, csv);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Mengunduh $filename...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Mengunduh $filename...')));
   }
 
-  /// Bungkus nilai dengan tanda kutip kalau mengandung koma, kutip,
-  /// atau baris baru, supaya format CSV tetap valid.
   String _csvEscape(Object? value) {
     final text = (value ?? '').toString();
     if (text.contains(',') || text.contains('"') || text.contains('\n')) {
@@ -99,9 +205,13 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 900;
 
+        // Halaman Profil Admin tidak relevan dengan download CSV maupun
+        // filter tanggal, jadi kedua tombol ini dinonaktifkan (null) saat
+        // admin sedang berada di halaman tersebut.
+        final isProfilAdmin = _selectedIndex == 2;
+
         return Scaffold(
           backgroundColor: _DashColors.bg,
-          // Di layar lebar sidebar permanen, jadi tidak perlu drawer.
           drawer: isWide
               ? null
               : Drawer(
@@ -131,13 +241,22 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: _menuTitles[_selectedIndex],
                         searchController: _searchController,
                         showMenuButton: !isWide,
-                        onDownload: () => _handleDownload(context),
+                        onDownload: isProfilAdmin
+                            ? null
+                            : () => _handleDownload(context),
+                        onCalendarTap: isProfilAdmin
+                            ? null
+                            : () async {
+                                // Kalau diklik dari halaman Dashboard, pindah
+                                // dulu ke halaman Data Pelanggan supaya
+                                // filternya kelihatan.
+                                if (_selectedIndex != 1) {
+                                  setState(() => _selectedIndex = 1);
+                                }
+                                await _bukaDatePicker(context);
+                              },
                       ),
-                      Expanded(
-                        child: _selectedIndex == 0
-                            ? const _DashboardContent()
-                            : const _DataPelangganContent(),
-                      ),
+                      Expanded(child: _buildBody()),
                     ],
                   ),
                 ),
@@ -147,6 +266,31 @@ class _DashboardPageState extends State<DashboardPage> {
         );
       },
     );
+  }
+
+  Widget _buildBody() {
+    switch (_selectedIndex) {
+      case 0:
+        return const _DashboardContent();
+      case 1:
+        return _DataPelangganContent(
+          tanggalDipilih: _tanggalDipilih,
+          rentangTanggal: _rentangTanggal,
+          onResetFilter: () => setState(() {
+            _tanggalDipilih = null;
+            _rentangTanggal = null;
+          }),
+          onRowsChanged: (rows) {
+            // Hindari setState kalau isinya sama persis (mis. rebuild
+            // biasa tanpa data baru).
+            if (identical(rows, _currentGuestRows)) return;
+            setState(() => _currentGuestRows = rows);
+          },
+        );
+      case 2:
+      default:
+        return const AdminProfilePage();
+    }
   }
 }
 
@@ -161,7 +305,6 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Area avatar, warna teal terang menyatu dengan topbar
         Container(
           width: double.infinity,
           color: _DashColors.sidebarTop,
@@ -172,8 +315,6 @@ class _Sidebar extends StatelessWidget {
             child: Icon(Icons.person, size: 32, color: Colors.white70),
           ),
         ),
-
-        // Menu navigasi
         _SidebarMenuItem(
           label: 'Dashboard',
           icon: Icons.dashboard_outlined,
@@ -186,11 +327,13 @@ class _Sidebar extends StatelessWidget {
           selected: selectedIndex == 1,
           onTap: () => onSelect(1),
         ),
-
-        // Sisa ruang gelap (sesuai desain)
+        _SidebarMenuItem(
+          label: 'Profil Admin',
+          icon: Icons.account_circle_outlined,
+          selected: selectedIndex == 2,
+          onTap: () => onSelect(2),
+        ),
         Expanded(child: Container(color: _DashColors.sidebarDark)),
-
-        // Tombol logout di bagian bawah
         Container(
           width: double.infinity,
           color: _DashColors.sidebarDark,
@@ -200,9 +343,6 @@ class _Sidebar extends StatelessWidget {
               width: 110,
               child: ElevatedButton.icon(
                 onPressed: () async {
-                  // Tidak perlu Navigator manual: AuthGate di main.dart
-                  // otomatis menampilkan LoginPage begitu status auth
-                  // berubah jadi "belum login".
                   await AuthService.instance.logout();
                 },
                 style: ElevatedButton.styleFrom(
@@ -271,13 +411,16 @@ class _TopBar extends StatelessWidget {
   final String title;
   final TextEditingController searchController;
   final bool showMenuButton;
-  final VoidCallback onDownload;
+  final VoidCallback? onDownload; // null = nonaktif (mis. di Profil Admin)
+  final VoidCallback?
+  onCalendarTap; // null = nonaktif (mis. di halaman Dashboard/Profil Admin)
 
   const _TopBar({
     required this.title,
     required this.searchController,
     required this.showMenuButton,
     required this.onDownload,
+    this.onCalendarTap,
   });
 
   @override
@@ -292,7 +435,6 @@ class _TopBar extends StatelessWidget {
               icon: const Icon(Icons.menu, color: Colors.white),
               onPressed: () => Scaffold.of(context).openDrawer(),
             ),
-          // Search bar, melebar mengikuti sisa ruang yang tersedia
           Expanded(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
@@ -319,15 +461,23 @@ class _TopBar extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           IconButton(
-            icon: const Icon(Icons.download_outlined, color: Colors.white),
+            icon: Icon(
+              Icons.download_outlined,
+              color: onDownload == null ? Colors.white38 : Colors.white,
+            ),
             tooltip: 'Unduh data sebagai CSV',
             onPressed: onDownload,
           ),
           const SizedBox(width: 12),
-          const Icon(
-            Icons.calendar_today_outlined,
-            color: Colors.white,
-            size: 20,
+          IconButton(
+            icon: Icon(
+              Icons.calendar_today_outlined,
+              color: onCalendarTap == null ? Colors.white38 : Colors.white,
+              size: 20,
+            ),
+            tooltip: 'Filter berdasarkan tanggal',
+            onPressed:
+                onCalendarTap, // disabled (null) otomatis kalau bukan di halaman Data Pelanggan
           ),
         ],
       ),
@@ -423,81 +573,760 @@ class _StatCard extends StatelessWidget {
 }
 
 /// ====================== KONTEN: DATA PELANGGAN ======================
-class _DataPelangganContent extends StatelessWidget {
-  const _DataPelangganContent();
+/// Menampilkan data tamu ASLI dari collection `guests` di Firestore,
+/// real-time (StreamBuilder-style lewat StreamSubscription manual supaya
+/// mudah kirim balik daftar yang sedang tampil ke halaman induk untuk
+/// keperluan download CSV).
+class _DataPelangganContent extends StatefulWidget {
+  final DateTime? tanggalDipilih;
+  final DateTimeRange? rentangTanggal;
+  final VoidCallback onResetFilter;
+  final ValueChanged<List<GuestRecord>>? onRowsChanged;
 
-  // Data contoh, ganti dengan data asli dari API/database
-  static const rows = [
-    {
-      'no': '1',
-      'tanggal': '01/06/2026',
-      'nama': 'Andi Saputra',
-      'layanan': 'Sewa Kamar',
-      'status': 'Selesai',
-    },
-    {
-      'no': '2',
-      'tanggal': '03/06/2026',
-      'nama': 'Budi Hartono',
-      'layanan': 'Sewa Kamar',
-      'status': 'Aktif',
-    },
-    {
-      'no': '3',
-      'tanggal': '05/06/2026',
-      'nama': 'Citra Dewi',
-      'layanan': 'Sewa Kamar',
-      'status': 'Aktif',
-    },
-    {
-      'no': '4',
-      'tanggal': '07/06/2026',
-      'nama': 'Dewi Lestari',
-      'layanan': 'Sewa Kamar',
-      'status': 'Selesai',
-    },
-  ];
+  const _DataPelangganContent({
+    required this.tanggalDipilih,
+    required this.rentangTanggal,
+    required this.onResetFilter,
+    this.onRowsChanged,
+  });
+
+  /// Filter daftar baris berdasarkan tanggal tunggal atau rentang tanggal.
+  /// Baris tanpa tanggal (null) otomatis disembunyikan kalau ada filter
+  /// aktif, karena tidak bisa dipastikan cocok atau tidak.
+  static List<GuestRecord> filterRecords(
+    List<GuestRecord> data,
+    DateTime? tanggalDipilih,
+    DateTimeRange? rentangTanggal,
+  ) {
+    if (tanggalDipilih == null && rentangTanggal == null) return data;
+
+    return data.where((row) {
+      final tgl = row.tanggal;
+      if (tgl == null) return false;
+
+      if (tanggalDipilih != null) {
+        return tgl.year == tanggalDipilih.year &&
+            tgl.month == tanggalDipilih.month &&
+            tgl.day == tanggalDipilih.day;
+      }
+
+      if (rentangTanggal != null) {
+        final mulai = DateTime(
+          rentangTanggal.start.year,
+          rentangTanggal.start.month,
+          rentangTanggal.start.day,
+        );
+        final akhir = DateTime(
+          rentangTanggal.end.year,
+          rentangTanggal.end.month,
+          rentangTanggal.end.day,
+        );
+        return !tgl.isBefore(mulai) && !tgl.isAfter(akhir);
+      }
+
+      return true;
+    }).toList();
+  }
+
+  @override
+  State<_DataPelangganContent> createState() => _DataPelangganContentState();
+}
+
+class _DataPelangganContentState extends State<_DataPelangganContent> {
+  List<GuestRecord> _allRows = const [];
+  bool _loading = true;
+  String? _errorMessage;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _guestsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stream dibuat SEKALI di initState (bukan di build) supaya tidak
+    // subscribe ulang setiap kali widget rebuild.
+    _guestsStream = FirebaseFirestore.instance.collection('guests').snapshots();
+    _guestsStream.listen(
+      (snapshot) {
+        if (!mounted) return;
+        final rows = snapshot.docs.map(GuestRecord.fromDoc).toList()
+          ..sort((a, b) {
+            final ta = a.tanggal;
+            final tb = b.tanggal;
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1; // tanpa tanggal ditaruh di bawah
+            if (tb == null) return -1;
+            return tb.compareTo(ta); // terbaru dulu
+          });
+        setState(() {
+          _allRows = rows;
+          _loading = false;
+          _errorMessage = null;
+        });
+        _reportFiltered();
+      },
+      onError: (Object e) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'Gagal memuat data tamu: $e';
+          _loading = false;
+        });
+      },
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _DataPelangganContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tanggalDipilih != widget.tanggalDipilih ||
+        oldWidget.rentangTanggal != widget.rentangTanggal) {
+      _reportFiltered();
+    }
+  }
+
+  /// Kirim daftar baris yang sedang tampil (setelah filter tanggal) ke
+  /// parent lewat callback. Dijadwalkan sesudah frame selesai supaya
+  /// tidak memicu setState di parent saat masih di tengah proses build.
+  void _reportFiltered() {
+    final filtered = _DataPelangganContent.filterRecords(
+      _allRows,
+      widget.tanggalDipilih,
+      widget.rentangTanggal,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onRowsChanged?.call(filtered);
+    });
+  }
+
+  String get _labelFilter {
+    final f = DateFormat('dd/MM/yyyy');
+    if (widget.rentangTanggal != null) {
+      return '${f.format(widget.rentangTanggal!.start)} - '
+          '${f.format(widget.rentangTanggal!.end)}';
+    }
+    if (widget.tanggalDipilih != null) {
+      return f.format(widget.tanggalDipilih!);
+    }
+    return '';
+  }
+
+  void _bukaFotoDialog(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        child: InteractiveViewer(
+          child: Image.network(
+            url,
+            errorBuilder: (_, __, ___) => const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Gagal memuat foto'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _bukaEditDialog(BuildContext context, GuestRecord guest) async {
+    final berhasil = await showDialog<bool>(
+      context: context,
+      builder: (_) => _EditGuestDialog(guest: guest),
+    );
+    if (berhasil == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data tamu berhasil diperbarui.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF0F0F0)),
-            columns: const [
-              DataColumn(label: Text('No')),
-              DataColumn(label: Text('Tanggal')),
-              DataColumn(label: Text('Nama')),
-              DataColumn(label: Text('Jenis Layanan')),
-              DataColumn(label: Text('Status')),
-            ],
-            rows: rows
-                .map(
-                  (r) => DataRow(
-                    cells: [
-                      DataCell(Text(r['no']!)),
-                      DataCell(Text(r['tanggal']!)),
-                      DataCell(Text(r['nama']!)),
-                      DataCell(Text(r['layanan']!)),
-                      DataCell(_StatusBadge(status: r['status']!)),
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+      );
+    }
+
+    final dataTerfilter = _DataPelangganContent.filterRecords(
+      _allRows,
+      widget.tanggalDipilih,
+      widget.rentangTanggal,
+    );
+    final adaFilter =
+        widget.tanggalDipilih != null || widget.rentangTanggal != null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Breakpoint khusus konten ini: di layar sempit (mis. HP), tabel
+        // horizontal-scroll susah dipakai, jadi ditampilkan sebagai daftar
+        // kartu (satu tamu = satu kartu) supaya tetap enak dibaca & tetap
+        // ada tombol Edit di tiap barisnya.
+        final narrow = constraints.maxWidth < 700;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (adaFilter)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Chip(
+                        avatar: const Icon(Icons.calendar_today, size: 14),
+                        backgroundColor: Colors.white,
+                        label: Text('Tanggal: $_labelFilter'),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.close, size: 14),
+                        label: const Text('Reset'),
+                        onPressed: widget.onResetFilter,
+                      ),
                     ],
                   ),
+                ),
+              if (dataTerfilter.isEmpty)
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    _allRows.isEmpty
+                        ? 'Belum ada data tamu.'
+                        : 'Tidak ada data pada tanggal ini',
+                  ),
                 )
-                .toList(),
+              else if (narrow)
+                Column(
+                  children: List.generate(dataTerfilter.length, (i) {
+                    final r = dataTerfilter[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _GuestCard(
+                        nomor: i + 1,
+                        guest: r,
+                        onEdit: () => _bukaEditDialog(context, r),
+                        onFotoTap: r.fotoUrl == null
+                            ? null
+                            : () => _bukaFotoDialog(context, r.fotoUrl!),
+                      ),
+                    );
+                  }),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor: WidgetStateProperty.all(
+                        const Color(0xFFF0F0F0),
+                      ),
+                      columns: const [
+                        DataColumn(label: Text('No')),
+                        DataColumn(label: Text('Tanggal')),
+                        DataColumn(label: Text('Kode Tamu')),
+                        DataColumn(label: Text('Nama Lengkap')),
+                        DataColumn(label: Text('Jenis Kelamin')),
+                        DataColumn(label: Text('Alamat Lengkap')),
+                        DataColumn(label: Text('Keperluan')),
+                        DataColumn(label: Text('Keterangan Tambahan')),
+                        DataColumn(label: Text('Foto')),
+                        DataColumn(label: Text('Status')),
+                        DataColumn(label: Text('Aksi')),
+                      ],
+                      rows: List<DataRow>.generate(dataTerfilter.length, (i) {
+                        final r = dataTerfilter[i];
+                        final tanggalFmt = DateFormat('dd/MM/yyyy');
+                        return DataRow(
+                          cells: [
+                            DataCell(Text('${i + 1}')),
+                            DataCell(
+                              Text(
+                                r.tanggal != null
+                                    ? tanggalFmt.format(r.tanggal!)
+                                    : '-',
+                              ),
+                            ),
+                            DataCell(Text(r.kodeTamu)),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 160,
+                                ),
+                                child: Text(
+                                  r.namaLengkap,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(Text(r.jenisKelamin)),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 200,
+                                ),
+                                child: Text(
+                                  r.alamatLengkap,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 140,
+                                ),
+                                child: Text(
+                                  r.keperluan,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 160,
+                                ),
+                                child: Text(
+                                  r.keteranganTambahan,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              r.fotoUrl == null
+                                  ? const Icon(
+                                      Icons.image_not_supported_outlined,
+                                      size: 20,
+                                      color: Colors.grey,
+                                    )
+                                  : InkWell(
+                                      onTap: () =>
+                                          _bukaFotoDialog(context, r.fotoUrl!),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: Image.network(
+                                          r.fotoUrl!,
+                                          width: 40,
+                                          height: 40,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                                Icons.broken_image_outlined,
+                                                size: 20,
+                                                color: Colors.grey,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                            DataCell(_StatusBadge(status: r.status)),
+                            DataCell(
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                tooltip: 'Edit data tamu',
+                                color: AppColors.teal,
+                                onPressed: () => _bukaEditDialog(context, r),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Kartu satu baris data tamu — dipakai sebagai pengganti DataTable di
+/// layar sempit (lihat breakpoint `narrow` di atas).
+class _GuestCard extends StatelessWidget {
+  final int nomor;
+  final GuestRecord guest;
+  final VoidCallback onEdit;
+  final VoidCallback? onFotoTap;
+
+  const _GuestCard({
+    required this.nomor,
+    required this.guest,
+    required this.onEdit,
+    this.onFotoTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tanggalFmt = DateFormat('dd/MM/yyyy');
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: onFotoTap,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: guest.fotoUrl == null
+                      ? Container(
+                          width: 48,
+                          height: 48,
+                          color: const Color(0xFFF0F0F0),
+                          child: const Icon(
+                            Icons.image_not_supported_outlined,
+                            size: 20,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : Image.network(
+                          guest.fotoUrl!,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 48,
+                            height: 48,
+                            color: const Color(0xFFF0F0F0),
+                            child: const Icon(
+                              Icons.broken_image_outlined,
+                              size: 20,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '#$nomor  ${guest.namaLengkap}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: AppColors.darkText,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      guest.kodeTamu,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _StatusBadge(status: guest.status),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                tooltip: 'Edit data tamu',
+                color: AppColors.teal,
+                onPressed: onEdit,
+              ),
+            ],
+          ),
+          const Divider(height: 20),
+          _CardField(
+            label: 'Tanggal',
+            value: guest.tanggal != null
+                ? tanggalFmt.format(guest.tanggal!)
+                : '-',
+          ),
+          _CardField(label: 'Jenis Kelamin', value: guest.jenisKelamin),
+          _CardField(label: 'Alamat Lengkap', value: guest.alamatLengkap),
+          _CardField(label: 'Keperluan', value: guest.keperluan),
+          _CardField(
+            label: 'Keterangan Tambahan',
+            value: guest.keteranganTambahan,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardField extends StatelessWidget {
+  final String label;
+  final String value;
+  const _CardField({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+          const Text(
+            ': ',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dialog form untuk mengedit satu baris data tamu di collection `guests`.
+/// Field `tanggal`, `kodeTamu`, dan `foto` SENGAJA tidak bisa diedit di
+/// sini (dianggap data asal dari form tamu / sistem), yang bisa diubah
+/// admin hanya field deskriptif + status.
+class _EditGuestDialog extends StatefulWidget {
+  final GuestRecord guest;
+  const _EditGuestDialog({required this.guest});
+
+  @override
+  State<_EditGuestDialog> createState() => _EditGuestDialogState();
+}
+
+class _EditGuestDialogState extends State<_EditGuestDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _namaController;
+  late final TextEditingController _jenisKelaminController;
+  late final TextEditingController _alamatController;
+  late final TextEditingController _keperluanController;
+  late final TextEditingController _keteranganController;
+  late final TextEditingController _statusController;
+  bool _saving = false;
+
+  String _clean(String v) => v == '-' ? '' : v;
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.guest;
+    _namaController = TextEditingController(text: _clean(g.namaLengkap));
+    _jenisKelaminController = TextEditingController(
+      text: _clean(g.jenisKelamin),
+    );
+    _alamatController = TextEditingController(text: _clean(g.alamatLengkap));
+    _keperluanController = TextEditingController(text: _clean(g.keperluan));
+    _keteranganController = TextEditingController(
+      text: _clean(g.keteranganTambahan),
+    );
+    _statusController = TextEditingController(text: _clean(g.status));
+  }
+
+  @override
+  void dispose() {
+    _namaController.dispose();
+    _jenisKelaminController.dispose();
+    _alamatController.dispose();
+    _keperluanController.dispose();
+    _keteranganController.dispose();
+    _statusController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSave() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('guests')
+          .doc(widget.guest.id)
+          .update({
+            'nama': _namaController.text.trim(),
+            'jenisKelamin': _jenisKelaminController.text.trim(),
+            'alamat': _alamatController.text.trim(),
+            'keperluan': _keperluanController.text.trim(),
+            'keteranganTambahan': _keteranganController.text.trim(),
+            'status': _statusController.text.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menyimpan perubahan: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Edit Data Tamu',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.darkText,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(false),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Kode Tamu: ${widget.guest.kodeTamu}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _namaController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nama Lengkap',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Nama wajib diisi'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _jenisKelaminController,
+                    decoration: const InputDecoration(
+                      labelText: 'Jenis Kelamin',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _alamatController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Alamat Lengkap',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _keperluanController,
+                    decoration: const InputDecoration(
+                      labelText: 'Keperluan',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _keteranganController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Keterangan Tambahan',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _statusController,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      helperText: 'Contoh: Menunggu, Disetujui, Ditolak',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        child: const Text('Batal'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _saving ? null : _handleSave,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.teal,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Simpan'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -511,8 +1340,24 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = status.toLowerCase() == 'aktif';
-    final color = isActive ? Colors.green : Colors.grey;
+    final key = status.toLowerCase();
+    final Color color;
+    switch (key) {
+      case 'aktif':
+      case 'diterima':
+      case 'disetujui':
+        color = Colors.green;
+        break;
+      case 'menunggu':
+      case 'pending':
+        color = Colors.orange;
+        break;
+      case 'ditolak':
+        color = Colors.red;
+        break;
+      default:
+        color = Colors.grey;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(

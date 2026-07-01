@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'admin_service.dart';
+
 /// Service yang membungkus semua interaksi dengan Firebase Authentication
 /// dan Firestore untuk login menggunakan USERNAME (bukan email).
 ///
@@ -113,6 +115,15 @@ class AuthService {
         'email': email.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      // Buat juga dokumen profil admin di collection terpisah `admins`.
+      // Sengaja dipisah dari `usernames` (yang cuma index login) dan
+      // TIDAK PERNAH menyentuh collection `guests`.
+      await AdminService.instance.createInitialProfile(
+        uid: credential.user!.uid,
+        username: usernameKey,
+        email: email.trim(),
+      );
     } catch (e) {
       // ignore: avoid_print
       print('DEBUG Firestore write error: $e');
@@ -126,6 +137,169 @@ class AuthService {
   }
 
   Future<void> logout() => _auth.signOut();
+
+  // ===================== PROFIL ADMIN: KEAMANAN =====================
+  //
+  // Semua operasi sensitif (ganti username, email, password) WAJIB
+  // reauthenticate dulu (minta password saat ini). Firebase Auth sendiri
+  // menolak operasi ini kalau sesi login sudah "terlalu lama" (error
+  // `requires-recent-login`) — reauthenticate di sini memastikan itu
+  // tidak pernah terjadi, sekaligus jadi lapisan keamanan tambahan biar
+  // orang lain yang kebetulan memegang sesi admin yang masih login tidak
+  // bisa asal ganti kredensial tanpa tahu password aslinya.
+  Future<void> reauthenticate(String currentPassword) async {
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) {
+      throw AuthServiceException('Sesi tidak valid, silakan login ulang.');
+    }
+    if (currentPassword.isEmpty) {
+      throw AuthServiceException('Password saat ini wajib diisi.');
+    }
+    final cred = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+    try {
+      await user.reauthenticateWithCredential(cred);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        throw AuthServiceException('Password saat ini salah.');
+      }
+      throw AuthServiceException(_mapErrorMessage(e));
+    }
+  }
+
+  /// Cari dokumen `usernames/{...}` milik uid tertentu (untuk keperluan
+  /// ganti username/email, di mana kita perlu tahu username LAMA-nya
+  /// dulu sebelum bisa mengganti dokumennya).
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _findUsernameDocByUid(
+    String uid,
+  ) async {
+    final query = await _firestore
+        .collection(_usernameCollection)
+        .where('uid', isEqualTo: uid)
+        .limit(1)
+        .get();
+    if (query.docs.isEmpty) return null;
+    return query.docs.first;
+  }
+
+  /// Ganti username admin yang sedang login. Password saat ini wajib
+  /// diisi (reauthentication) supaya aman.
+  Future<void> updateUsername({
+    required String newUsername,
+    required String currentPassword,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw AuthServiceException('Admin belum login.');
+    }
+    final newKey = _normalize(newUsername);
+    if (newKey.isEmpty) {
+      throw AuthServiceException('Username wajib diisi.');
+    }
+
+    await reauthenticate(currentPassword);
+
+    final oldDoc = await _findUsernameDocByUid(user.uid);
+    if (oldDoc == null) {
+      throw AuthServiceException('Data username lama tidak ditemukan.');
+    }
+    final oldKey = oldDoc.id;
+    if (oldKey == newKey) {
+      // Tidak ada perubahan, tidak perlu apa-apa.
+      return;
+    }
+
+    final newDocRef = _firestore.collection(_usernameCollection).doc(newKey);
+    final email = oldDoc.data()['email'] as String? ?? user.email ?? '';
+
+    // Pakai transaction supaya "pindah" dari dokumen lama ke dokumen baru
+    // ini atomik: tidak mungkin berhenti di tengah jalan dan meninggalkan
+    // dua dokumen username yang menunjuk ke akun yang sama.
+    await _firestore.runTransaction((tx) async {
+      final newSnap = await tx.get(newDocRef);
+      if (newSnap.exists) {
+        throw AuthServiceException('Username sudah digunakan, pilih yang lain.');
+      }
+      tx.set(newDocRef, {
+        'uid': user.uid,
+        'email': email,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      tx.delete(oldDoc.reference);
+    });
+
+    await AdminService.instance.updateProfile(username: newKey);
+  }
+
+  /// Ganti email admin yang sedang login. Password saat ini wajib diisi
+  /// (reauthentication).
+  ///
+  /// CATATAN PENTING: Firebase Auth versi terbaru mewajibkan verifikasi
+  /// untuk ganti email (`verifyBeforeUpdateEmail`) — artinya email akun
+  /// TIDAK langsung berubah begitu fungsi ini selesai. Firebase akan
+  /// mengirim link konfirmasi ke email BARU, dan email akun baru benar-benar
+  /// berubah setelah admin mengklik link tersebut. Karena itu, mapping
+  /// `usernames`/`admins` di Firestore SENGAJA belum diubah di sini — baru
+  /// disinkronkan otomatis lewat [syncEmailIfChanged] setelah link
+  /// dikonfirmasi, supaya login (yang bergantung pada mapping username ->
+  /// email) tidak pernah rusak di tengah proses.
+  Future<void> updateEmail({
+    required String newEmail,
+    required String currentPassword,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw AuthServiceException('Admin belum login.');
+    }
+    final email = newEmail.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      throw AuthServiceException('Format email tidak valid.');
+    }
+
+    await reauthenticate(currentPassword);
+
+    try {
+      await user.verifyBeforeUpdateEmail(email);
+    } on FirebaseAuthException catch (e) {
+      throw AuthServiceException(_mapErrorMessage(e));
+    }
+  }
+
+  /// Panggil ini saat admin membuka halaman Profil (atau dashboard).
+  /// Kalau admin sebelumnya sempat ganti email dan SUDAH mengklik link
+  /// konfirmasi (sehingga email asli di Firebase Auth sudah berubah),
+  /// fungsi ini akan mendeteksi perbedaan itu dan otomatis menyinkronkan
+  /// mapping `usernames`/`admins` di Firestore supaya login berikutnya
+  /// tetap jalan normal dengan email yang baru.
+  Future<void> syncEmailIfChanged() async {
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) return;
+
+    try {
+      await user.reload();
+    } catch (_) {
+      return; // Kalau gagal reload (mis. offline), coba lagi lain kali.
+    }
+    final refreshedUser = _auth.currentUser;
+    final currentEmail = refreshedUser?.email;
+    if (refreshedUser == null || currentEmail == null) return;
+
+    final usernameDoc = await _findUsernameDocByUid(refreshedUser.uid);
+    if (usernameDoc == null) return;
+
+    final storedEmail = usernameDoc.data()['email'] as String?;
+    if (storedEmail == currentEmail) return; // sudah sinkron
+
+    await usernameDoc.reference.update({'email': currentEmail});
+    // `updateProfile` di AdminService cuma menangani field username/foto,
+    // jadi field email di sini langsung ditulis ke collection `admins`.
+    await _firestore.collection('admins').doc(refreshedUser.uid).set({
+      'email': currentEmail,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 
   String _mapErrorMessage(FirebaseAuthException e) {
     switch (e.code) {
@@ -144,6 +318,8 @@ class AuthService {
         return 'Terlalu banyak percobaan, coba lagi nanti.';
       case 'network-request-failed':
         return 'Tidak ada koneksi internet.';
+      case 'requires-recent-login':
+        return 'Sesi login terlalu lama, silakan login ulang dulu.';
       default:
         return e.message ?? 'Terjadi kesalahan, coba lagi.';
     }

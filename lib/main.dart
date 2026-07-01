@@ -9,9 +9,7 @@ import 'services/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const AdaTamuApp());
 }
 
@@ -74,6 +72,13 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  // FocusNode khusus password: dipakai untuk memaksa field ini ke-reset
+  // dan bisa diketik lagi setelah login gagal (lihat catatan di
+  // _handleLogin). Beberapa browser (terutama Chrome, setelah login
+  // gagal 2x) suka "mengunci" fokus di field password karena warning
+  // bawaan browser (mis. "password ini pernah bocor") — refocus manual
+  // ini yang memastikan field tetap bisa diedit user.
+  final _passwordFocusNode = FocusNode();
   bool _obscurePassword = true;
   bool _isLoading = false;
 
@@ -81,6 +86,7 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -90,19 +96,33 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthService.instance.login(
-        username: username,
-        password: password,
-      );
+      await AuthService.instance.login(username: username, password: password);
       // Tidak perlu Navigator di sini: AuthGate otomatis menampilkan
       // DashboardPage begitu authStateChanges mendeteksi user login.
     } on AuthServiceException catch (e) {
       _showError(e.message);
+      _resetPasswordFieldForRetry();
     } catch (e) {
       _showError('Gagal login, coba lagi.');
+      _resetPasswordFieldForRetry();
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Kosongkan password & paksa fokus balik ke field-nya supaya user
+  /// selalu bisa langsung ngetik ulang begitu login gagal — tanpa ini,
+  /// di beberapa browser field-nya kadang jadi tidak responsif setelah
+  /// gagal 2x berturut-turut.
+  void _resetPasswordFieldForRetry() {
+    if (!mounted) return;
+    _passwordController.clear();
+    // Beri jeda 1 frame supaya build selesai dulu sebelum minta fokus,
+    // biar tidak bentrok dengan SnackBar yang baru muncul.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FocusScope.of(context).requestFocus(_passwordFocusNode);
+    });
   }
 
   void _showError(String message) {
@@ -113,9 +133,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _goToRegister() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const RegisterPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RegisterPage()));
   }
 
   @override
@@ -157,10 +177,10 @@ class _LoginPageState extends State<LoginPage> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(
-                                  flex: 5,
+                                  flex: 6,
                                   child: _WelcomePanel(isWide: isWide),
                                 ),
-                                Expanded(flex: 5, child: _buildLoginForm()),
+                                Expanded(flex: 4, child: _buildLoginForm()),
                               ],
                             ),
                           )
@@ -182,91 +202,104 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildLoginForm() {
+    // Dibungkus SingleChildScrollView supaya kalau tinggi konten sedikit
+    // melebihi tinggi panel kiri (mis. card avatar lebih tinggi dari
+    // "Selamat Datang" + logo), form ini scroll alih-alih overflow.
     return Container(
       color: AppColors.teal,
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Avatar bulat
-          Center(
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: const BoxDecoration(
-                color: Color(0xFFD9D9D9),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.person, size: 56, color: Colors.white70),
-            ),
-          ),
-          const SizedBox(height: 28),
-
-          const _FieldLabel('Username'),
-          const SizedBox(height: 6),
-          _LoginTextField(controller: _usernameController, hintText: ''),
-          const SizedBox(height: 18),
-
-          const _FieldLabel('Password'),
-          const SizedBox(height: 6),
-          _LoginTextField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                size: 18,
-                color: Colors.grey,
-              ),
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
-            ),
-          ),
-          const SizedBox(height: 26),
-
-          // Tombol Login
-          SizedBox(
-            width: 120,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _handleLogin,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.yellow,
-                foregroundColor: AppColors.darkText,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Avatar bulat
+            Center(
+              child: Container(
+                width: 90,
+                height: 90,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD9D9D9),
+                  shape: BoxShape.circle,
                 ),
-                elevation: 2,
+                child: const Icon(
+                  Icons.person,
+                  size: 56,
+                  color: Colors.white70,
+                ),
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.darkText,
-                      ),
-                    )
-                  : const Text(
-                      'Login',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 28),
 
-          // Link ke halaman Daftar
-          Center(
-            child: TextButton(
-              onPressed: _isLoading ? null : _goToRegister,
-              child: const Text(
-                'Belum punya akun? Daftar',
-                style: TextStyle(color: Colors.white, fontSize: 12),
+            const _FieldLabel('Username'),
+            const SizedBox(height: 6),
+            _LoginTextField(controller: _usernameController, hintText: ''),
+            const SizedBox(height: 18),
+
+            const _FieldLabel('Password'),
+            const SizedBox(height: 6),
+            _LoginTextField(
+              controller: _passwordController,
+              focusNode: _passwordFocusNode,
+              obscureText: _obscurePassword,
+              disableBrowserAutofill: true,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                  size: 18,
+                  color: Colors.grey,
+                ),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 26),
+
+            // Tombol Login
+            Center(
+              child: SizedBox(
+                width: 120,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _handleLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.yellow,
+                    foregroundColor: AppColors.darkText,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.darkText,
+                          ),
+                        )
+                      : const Text(
+                          'Login',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Link ke halaman Daftar
+            Center(
+              child: TextButton(
+                onPressed: _isLoading ? null : _goToRegister,
+                child: const Text(
+                  'Belum punya akun? Daftar',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -293,22 +326,33 @@ class _FieldLabel extends StatelessWidget {
 /// Text field putih bulat sesuai desain
 class _LoginTextField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final bool obscureText;
   final String? hintText;
   final Widget? suffixIcon;
+  // Kalau true, matikan autocorrect/suggestion & autofill hints supaya
+  // browser (terutama Chrome) tidak "ikut campur" (mis. munculin warning
+  // password bocor) yang bisa bikin field jadi susah diketik ulang.
+  final bool disableBrowserAutofill;
 
   const _LoginTextField({
     required this.controller,
+    this.focusNode,
     this.obscureText = false,
     this.hintText,
     this.suffixIcon,
+    this.disableBrowserAutofill = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       obscureText: obscureText,
+      autocorrect: !disableBrowserAutofill,
+      enableSuggestions: !disableBrowserAutofill,
+      autofillHints: disableBrowserAutofill ? null : const [],
       style: const TextStyle(fontSize: 14),
       decoration: InputDecoration(
         hintText: hintText,
@@ -330,6 +374,7 @@ class _LoginTextField extends StatelessWidget {
 }
 
 /// Panel kiri: "Selamat Datang" + logo AdaTamu
+/// Panel kiri: "Selamat Datang" + logo AdaTamu
 class _WelcomePanel extends StatelessWidget {
   final bool isWide;
   const _WelcomePanel({required this.isWide});
@@ -338,64 +383,36 @@ class _WelcomePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.navy,
-      padding: EdgeInsets.symmetric(horizontal: 32, vertical: isWide ? 0 : 32),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Selamat Datang',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+      padding: EdgeInsets.symmetric(horizontal: 36, vertical: isWide ? 48 : 36),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              'Selamat Datang',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 44,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-
-          // Logo: buku + petir + wordmark, digeser sedikit ke tengah panel
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 70,
-                  height: 70,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Icon(
-                        Icons.menu_book_outlined,
-                        size: 70,
-                        color: AppColors.teal,
-                      ),
-                      Icon(Icons.bolt, size: 32, color: AppColors.yellow),
-                    ],
-                  ),
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: FractionallySizedBox(
+                widthFactor: 0.92,
+                child: Image.asset(
+                  'lib/assets/images/logo.png',
+                  fit: BoxFit.contain,
                 ),
-                const SizedBox(height: 10),
-
-                // Wordmark "AdaTamu"
-                RichText(
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                    children: [
-                      TextSpan(
-                        text: 'Ada',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      TextSpan(
-                        text: 'Tamu',
-                        style: TextStyle(color: AppColors.yellow),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
