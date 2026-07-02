@@ -49,7 +49,25 @@ class GuestRecord {
     required this.waktuSelesai,
   });
 
+  /// Dianggap "selesai" HANYA kalau field status persis 'selesai'
+  /// (case-insensitive). Selain itu (termasuk kosong/'-'/status lain
+  /// peninggalan lama seperti 'aktif'/'pending') dianggap "menunggu" —
+  /// dipakai juga oleh statistik dashboard supaya jumlahnya konsisten
+  /// dengan badge di tabel Data Pelanggan.
   bool get sudahSelesai => status.toLowerCase() == 'selesai';
+
+  /// Gabungan semua teks yang bisa dicari lewat kotak "Cari..." di atas
+  /// (dibuat lowercase sekali di sini supaya pencarian efisien & tidak
+  /// perlu lowercase berulang tiap kali dibandingkan).
+  String get searchableText => [
+    namaLengkap,
+    kodeTamu,
+    alamatLengkap,
+    keperluan,
+    keteranganTambahan,
+    jenisKelamin,
+    status,
+  ].join(' ').toLowerCase();
 
   factory GuestRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -105,6 +123,13 @@ class _DashColors {
   static const red = Color(0xFFE63946); // tombol logout
 }
 
+/// Satu kartu statistik di halaman Dashboard (mis. "Total Pelanggan: 128").
+class _StatItem {
+  final String label;
+  final String value;
+  const _StatItem({required this.label, required this.value});
+}
+
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -116,11 +141,22 @@ class _DashboardPageState extends State<DashboardPage> {
   // 0 = Dashboard, 1 = Data Pelanggan, 2 = Profil Admin
   int _selectedIndex = 0;
   final _searchController = TextEditingController();
+  // Teks yang sedang diketik di kotak "Cari..." -- dipakai untuk
+  // memfilter tabel Data Pelanggan secara real-time.
+  String _searchQuery = '';
 
   // Baris tamu (guests) yang sedang tampil di tabel Data Pelanggan
-  // (setelah difilter tanggal). Dipakai supaya tombol download CSV bisa
-  // mengekspor data ASLI yang sedang dilihat admin, bukan data statis.
+  // (setelah difilter tanggal & pencarian). Dipakai supaya tombol
+  // download CSV bisa mengekspor data ASLI yang sedang dilihat admin,
+  // bukan data statis.
   List<GuestRecord> _currentGuestRows = const [];
+
+  // Statistik dashboard (Total Pelanggan / Menunggu / Selesai), dihitung
+  // real-time dari Firestore oleh _DashboardContent lalu dilaporkan balik
+  // ke sini lewat callback -- dipakai supaya tombol download CSV di
+  // halaman Dashboard mengekspor angka yang SAMA dengan yang tampil di
+  // layar, bukan data statis.
+  List<_StatItem> _currentStats = const [];
 
   // ===== State filter tanggal (dipakai khusus halaman Data Pelanggan) =====
   DateTime? _tanggalDipilih;
@@ -196,7 +232,7 @@ class _DashboardPageState extends State<DashboardPage> {
     } else {
       final buffer = StringBuffer();
       buffer.writeln('Label,Nilai');
-      for (final stat in _DashboardContent.stats) {
+      for (final stat in _currentStats) {
         buffer.writeln('${_csvEscape(stat.label)},${_csvEscape(stat.value)}');
       }
       csv = buffer.toString();
@@ -215,6 +251,12 @@ class _DashboardPageState extends State<DashboardPage> {
       return '"${text.replaceAll('"', '""')}"';
     }
     return text;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -259,6 +301,12 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: _menuTitles[_selectedIndex],
                         searchController: _searchController,
                         showMenuButton: !isWide,
+                        // Pencarian cuma relevan di halaman Data
+                        // Pelanggan (halaman lain tidak punya daftar
+                        // untuk difilter).
+                        onSearchChanged: _selectedIndex == 1
+                            ? (value) => setState(() => _searchQuery = value)
+                            : null,
                         onDownload: isProfilAdmin
                             ? null
                             : () => _handleDownload(context),
@@ -289,11 +337,17 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildBody() {
     switch (_selectedIndex) {
       case 0:
-        return const _DashboardContent();
+        return _DashboardContent(
+          onStatsChanged: (stats) {
+            if (identical(stats, _currentStats)) return;
+            setState(() => _currentStats = stats);
+          },
+        );
       case 1:
         return _DataPelangganContent(
           tanggalDipilih: _tanggalDipilih,
           rentangTanggal: _rentangTanggal,
+          searchQuery: _searchQuery,
           onResetFilter: () => setState(() {
             _tanggalDipilih = null;
             _rentangTanggal = null;
@@ -432,6 +486,9 @@ class _TopBar extends StatelessWidget {
   final VoidCallback? onDownload; // null = nonaktif (mis. di Profil Admin)
   final VoidCallback?
   onCalendarTap; // null = nonaktif (mis. di halaman Dashboard/Profil Admin)
+  // null = kotak pencarian nonaktif/disabled (mis. di halaman Dashboard
+  // atau Profil Admin, yang tidak punya daftar untuk difilter).
+  final ValueChanged<String>? onSearchChanged;
 
   const _TopBar({
     required this.title,
@@ -439,10 +496,12 @@ class _TopBar extends StatelessWidget {
     required this.showMenuButton,
     required this.onDownload,
     this.onCalendarTap,
+    this.onSearchChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final searchAktif = onSearchChanged != null;
     return Container(
       color: AppColors.teal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -458,10 +517,23 @@ class _TopBar extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 420),
               child: TextField(
                 controller: searchController,
+                enabled: searchAktif,
+                onChanged: onSearchChanged,
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Cari...',
+                  hintText: searchAktif
+                      ? 'Cari nama, alamat, keperluan, kode tamu...'
+                      : 'Cari... (buka Data Pelanggan dulu)',
                   prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: searchAktif && searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () {
+                            searchController.clear();
+                            onSearchChanged?.call('');
+                          },
+                        )
+                      : null,
                   filled: true,
                   fillColor: Colors.white,
                   isDense: true,
@@ -504,17 +576,93 @@ class _TopBar extends StatelessWidget {
 }
 
 /// ====================== KONTEN: DASHBOARD ======================
-class _DashboardContent extends StatelessWidget {
-  const _DashboardContent();
+/// Kartu statistik ("Total Pelanggan", "Menunggu", "Selesai") dihitung
+/// REAL-TIME dari collection `guests` di Firestore -- bukan angka statis
+/// lagi. "Menunggu"/"Selesai" dihitung dari field `status` tiap dokumen,
+/// pakai definisi yang sama persis dengan `GuestRecord.sudahSelesai` biar
+/// jumlahnya selalu konsisten dengan badge status di tabel Data Pelanggan.
+class _DashboardContent extends StatefulWidget {
+  final ValueChanged<List<_StatItem>>? onStatsChanged;
+  const _DashboardContent({this.onStatsChanged});
 
-  static const stats = [
-    _StatItem(label: 'Total Pelanggan', value: '128'),
-    _StatItem(label: 'Pelanggan Baru', value: '12'),
-    _StatItem(label: 'Pelanggan Aktif', value: '96'),
-  ];
+  @override
+  State<_DashboardContent> createState() => _DashboardContentState();
+}
+
+class _DashboardContentState extends State<_DashboardContent> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _guestsStream;
+  bool _loading = true;
+  String? _errorMessage;
+  int _total = 0;
+  int _menunggu = 0;
+  int _selesai = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _guestsStream = FirebaseFirestore.instance.collection('guests').snapshots();
+    _guestsStream.listen(
+      (snapshot) {
+        if (!mounted) return;
+        var menunggu = 0;
+        var selesai = 0;
+        for (final doc in snapshot.docs) {
+          final rawStatus = doc.data()['status']?.toString().trim() ?? '';
+          if (rawStatus.toLowerCase() == 'selesai') {
+            selesai++;
+          } else {
+            menunggu++;
+          }
+        }
+        setState(() {
+          _total = snapshot.docs.length;
+          _menunggu = menunggu;
+          _selesai = selesai;
+          _loading = false;
+          _errorMessage = null;
+        });
+        _reportStats();
+      },
+      onError: (Object e) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'Gagal memuat statistik: $e';
+          _loading = false;
+        });
+      },
+    );
+  }
+
+  void _reportStats() {
+    final stats = [
+      _StatItem(label: 'Total Pelanggan', value: '$_total'),
+      _StatItem(label: 'Menunggu', value: '$_menunggu'),
+      _StatItem(label: 'Selesai', value: '$_selesai'),
+    ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onStatsChanged?.call(stats);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+      );
+    }
+
+    final stats = [
+      _StatItem(label: 'Total Pelanggan', value: '$_total'),
+      _StatItem(label: 'Menunggu', value: '$_menunggu'),
+      _StatItem(label: 'Selesai', value: '$_selesai'),
+    ];
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: LayoutBuilder(
@@ -538,12 +686,6 @@ class _DashboardContent extends StatelessWidget {
       ),
     );
   }
-}
-
-class _StatItem {
-  final String label;
-  final String value;
-  const _StatItem({required this.label, required this.value});
 }
 
 class _StatCard extends StatelessWidget {
@@ -598,12 +740,14 @@ class _StatCard extends StatelessWidget {
 class _DataPelangganContent extends StatefulWidget {
   final DateTime? tanggalDipilih;
   final DateTimeRange? rentangTanggal;
+  final String searchQuery;
   final VoidCallback onResetFilter;
   final ValueChanged<List<GuestRecord>>? onRowsChanged;
 
   const _DataPelangganContent({
     required this.tanggalDipilih,
     required this.rentangTanggal,
+    required this.searchQuery,
     required this.onResetFilter,
     this.onRowsChanged,
   });
@@ -611,7 +755,7 @@ class _DataPelangganContent extends StatefulWidget {
   /// Filter daftar baris berdasarkan tanggal tunggal atau rentang tanggal.
   /// Baris tanpa tanggal (null) otomatis disembunyikan kalau ada filter
   /// aktif, karena tidak bisa dipastikan cocok atau tidak.
-  static List<GuestRecord> filterRecords(
+  static List<GuestRecord> filterByDate(
     List<GuestRecord> data,
     DateTime? tanggalDipilih,
     DateTimeRange? rentangTanggal,
@@ -644,6 +788,20 @@ class _DataPelangganContent extends StatefulWidget {
 
       return true;
     }).toList();
+  }
+
+  /// Filter daftar baris berdasarkan teks pencarian, dicocokkan ke nama,
+  /// kode tamu, alamat, keperluan, keterangan tambahan, jenis kelamin,
+  /// dan status (lihat `GuestRecord.searchableText`). Pencocokan
+  /// case-insensitive dan sederhana (substring), cukup untuk kebutuhan
+  /// pencarian cepat di tabel ini.
+  static List<GuestRecord> filterBySearch(
+    List<GuestRecord> data,
+    String query,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return data;
+    return data.where((row) => row.searchableText.contains(q)).toList();
   }
 
   @override
@@ -691,24 +849,31 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     );
   }
 
+  List<GuestRecord> _applyAllFilters(List<GuestRecord> data) {
+    final byDate = _DataPelangganContent.filterByDate(
+      data,
+      widget.tanggalDipilih,
+      widget.rentangTanggal,
+    );
+    return _DataPelangganContent.filterBySearch(byDate, widget.searchQuery);
+  }
+
   @override
   void didUpdateWidget(covariant _DataPelangganContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.tanggalDipilih != widget.tanggalDipilih ||
-        oldWidget.rentangTanggal != widget.rentangTanggal) {
+        oldWidget.rentangTanggal != widget.rentangTanggal ||
+        oldWidget.searchQuery != widget.searchQuery) {
       _reportFiltered();
     }
   }
 
-  /// Kirim daftar baris yang sedang tampil (setelah filter tanggal) ke
-  /// parent lewat callback. Dijadwalkan sesudah frame selesai supaya
-  /// tidak memicu setState di parent saat masih di tengah proses build.
+  /// Kirim daftar baris yang sedang tampil (setelah filter tanggal +
+  /// pencarian) ke parent lewat callback. Dijadwalkan sesudah frame
+  /// selesai supaya tidak memicu setState di parent saat masih di tengah
+  /// proses build.
   void _reportFiltered() {
-    final filtered = _DataPelangganContent.filterRecords(
-      _allRows,
-      widget.tanggalDipilih,
-      widget.rentangTanggal,
-    );
+    final filtered = _applyAllFilters(_allRows);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       widget.onRowsChanged?.call(filtered);
@@ -810,13 +975,10 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
       );
     }
 
-    final dataTerfilter = _DataPelangganContent.filterRecords(
-      _allRows,
-      widget.tanggalDipilih,
-      widget.rentangTanggal,
-    );
-    final adaFilter =
+    final dataTerfilter = _applyAllFilters(_allRows);
+    final adaFilterTanggal =
         widget.tanggalDipilih != null || widget.rentangTanggal != null;
+    final adaPencarian = widget.searchQuery.trim().isNotEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -830,23 +992,31 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (adaFilter)
+              if (adaFilterTanggal || adaPencarian)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Wrap(
                     spacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Chip(
-                        avatar: const Icon(Icons.calendar_today, size: 14),
-                        backgroundColor: Colors.white,
-                        label: Text('Tanggal: $_labelFilter'),
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.close, size: 14),
-                        label: const Text('Reset'),
-                        onPressed: widget.onResetFilter,
-                      ),
+                      if (adaFilterTanggal)
+                        Chip(
+                          avatar: const Icon(Icons.calendar_today, size: 14),
+                          backgroundColor: Colors.white,
+                          label: Text('Tanggal: $_labelFilter'),
+                        ),
+                      if (adaPencarian)
+                        Chip(
+                          avatar: const Icon(Icons.search, size: 14),
+                          backgroundColor: Colors.white,
+                          label: Text('Cari: "${widget.searchQuery.trim()}"'),
+                        ),
+                      if (adaFilterTanggal)
+                        ActionChip(
+                          avatar: const Icon(Icons.close, size: 14),
+                          label: const Text('Reset Tanggal'),
+                          onPressed: widget.onResetFilter,
+                        ),
                     ],
                   ),
                 ),
@@ -868,6 +1038,8 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                   child: Text(
                     _allRows.isEmpty
                         ? 'Belum ada data tamu.'
+                        : adaPencarian
+                        ? 'Tidak ada data yang cocok dengan pencarian.'
                         : 'Tidak ada data pada tanggal ini',
                   ),
                 )
@@ -910,6 +1082,8 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                       columns: const [
                         DataColumn(label: Text('No')),
                         DataColumn(label: Text('Tanggal')),
+                        DataColumn(label: Text('Waktu Masuk')),
+                        DataColumn(label: Text('Waktu Selesai')),
                         DataColumn(label: Text('Kode Tamu')),
                         DataColumn(label: Text('Nama Lengkap')),
                         DataColumn(label: Text('Jenis Kelamin')),
@@ -917,14 +1091,14 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                         DataColumn(label: Text('Keperluan')),
                         DataColumn(label: Text('Keterangan Tambahan')),
                         DataColumn(label: Text('Foto')),
-                        DataColumn(label: Text('Waktu Masuk')),
-                        DataColumn(label: Text('Waktu Selesai')),
                         DataColumn(label: Text('Status')),
                       ],
                       rows: List<DataRow>.generate(dataTerfilter.length, (i) {
                         final r = dataTerfilter[i];
                         final tanggalFmt = DateFormat('dd/MM/yyyy');
-                        final waktuFmt = DateFormat('dd/MM/yyyy HH:mm');
+                        // Cuma jam:menit -- tanggalnya sudah ada di kolom
+                        // "Tanggal" tersendiri, jadi tidak perlu diulang.
+                        final jamFmt = DateFormat('HH:mm');
                         return DataRow(
                           cells: [
                             DataCell(Text('${i + 1}')),
@@ -932,6 +1106,20 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                               Text(
                                 r.tanggal != null
                                     ? tanggalFmt.format(r.tanggal!)
+                                    : '-',
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                r.waktuMasuk != null
+                                    ? jamFmt.format(r.waktuMasuk!)
+                                    : '-',
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                r.waktuSelesai != null
+                                    ? jamFmt.format(r.waktuSelesai!)
                                     : '-',
                               ),
                             ),
@@ -1009,20 +1197,6 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                                     ),
                             ),
                             DataCell(
-                              Text(
-                                r.waktuMasuk != null
-                                    ? waktuFmt.format(r.waktuMasuk!)
-                                    : '-',
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                r.waktuSelesai != null
-                                    ? waktuFmt.format(r.waktuSelesai!)
-                                    : '-',
-                              ),
-                            ),
-                            DataCell(
                               _StatusBadge(
                                 status: r.status,
                                 onTap: r.sudahSelesai
@@ -1062,7 +1236,8 @@ class _GuestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tanggalFmt = DateFormat('dd/MM/yyyy');
-    final waktuFmt = DateFormat('dd/MM/yyyy HH:mm');
+    // Cuma jam:menit -- konsisten dengan tampilan tabel di layar lebar.
+    final jamFmt = DateFormat('HH:mm');
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1152,24 +1327,24 @@ class _GuestCard extends StatelessWidget {
                 ? tanggalFmt.format(guest.tanggal!)
                 : '-',
           ),
+          _CardField(
+            label: 'Waktu Masuk',
+            value: guest.waktuMasuk != null
+                ? jamFmt.format(guest.waktuMasuk!)
+                : '-',
+          ),
+          _CardField(
+            label: 'Waktu Selesai',
+            value: guest.waktuSelesai != null
+                ? jamFmt.format(guest.waktuSelesai!)
+                : '-',
+          ),
           _CardField(label: 'Jenis Kelamin', value: guest.jenisKelamin),
           _CardField(label: 'Alamat Lengkap', value: guest.alamatLengkap),
           _CardField(label: 'Keperluan', value: guest.keperluan),
           _CardField(
             label: 'Keterangan Tambahan',
             value: guest.keteranganTambahan,
-          ),
-          _CardField(
-            label: 'Waktu Masuk',
-            value: guest.waktuMasuk != null
-                ? waktuFmt.format(guest.waktuMasuk!)
-                : '-',
-          ),
-          _CardField(
-            label: 'Waktu Selesai',
-            value: guest.waktuSelesai != null
-                ? waktuFmt.format(guest.waktuSelesai!)
-                : '-',
           ),
         ],
       ),
