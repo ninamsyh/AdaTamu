@@ -25,9 +25,6 @@ class Guest {
     this.waktuSelesai,
   }) : createdAt = createdAt ?? DateTime.now();
 
-  /// Foto pertama, dipertahankan untuk kompatibilitas mundur dengan sisi
-  /// admin yang masih membaca field `fotoUrl` tunggal. Sisi admin yang sudah
-  /// diperbarui bisa membaca seluruh daftar lewat field `fotoUrls`.
   String get fotoUrl => fotoUrls.isNotEmpty ? fotoUrls.first : '';
 
   Map<String, dynamic> toMap() {
