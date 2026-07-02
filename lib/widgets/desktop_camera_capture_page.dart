@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import '../theme/app_theme.dart';
 
@@ -203,7 +202,11 @@ class _DesktopCameraCapturePageState extends State<DesktopCameraCapturePage> {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+            style: TextStyle(
+              fontFamily: AppTextStyles.fontFamily,
+              color: Colors.white,
+              fontSize: 14,
+            ),
           ),
           if (showClose) ...[
             const SizedBox(height: 20),
@@ -211,7 +214,10 @@ class _DesktopCameraCapturePageState extends State<DesktopCameraCapturePage> {
               onPressed: () => Navigator.of(context).pop(),
               child: Text(
                 'Tutup',
-                style: GoogleFonts.poppins(color: AppColors.inputBorderFocused),
+                style: TextStyle(
+                  fontFamily: AppTextStyles.fontFamily,
+                  color: AppColors.inputBorderFocused,
+                ),
               ),
             ),
           ],

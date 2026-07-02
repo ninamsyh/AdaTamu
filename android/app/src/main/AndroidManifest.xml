@@ -7,7 +7,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:label="adatamu_app"
+        android:label="AdaTamu"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

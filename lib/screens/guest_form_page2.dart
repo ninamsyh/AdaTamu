@@ -27,7 +27,7 @@ class _GuestFormPage2State extends State<GuestFormPage2> {
   String? _keperluan;
   String _keperluanLainnya = '';
   String _keterangan = '';
-  String? _fotoPath;
+  List<String> _fotoPaths = [];
 
   static const List<String> _jenisKelaminOptions = ['Laki-Laki', 'Perempuan'];
   String? _kodeTamu;
@@ -80,7 +80,7 @@ class _GuestFormPage2State extends State<GuestFormPage2> {
       return;
     }
 
-    final result = await Navigator.of(context).push<Map<String, String?>>(
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
         builder: (_) => GuestFormPage3(
           nama: _namaController.text.trim(),
@@ -91,24 +91,24 @@ class _GuestFormPage2State extends State<GuestFormPage2> {
           initialKeperluan: _keperluan,
           initialKeperluanLainnya: _keperluanLainnya,
           initialKeterangan: _keterangan,
-          initialFotoPath: _fotoPath,
+          initialFotoPaths: _fotoPaths,
         ),
       ),
     );
 
     if (result != null && mounted) {
       setState(() {
-        _keperluan = result['keperluan'];
-        _keperluanLainnya = result['keperluanLainnya'] ?? '';
-        _keterangan = result['keterangan'] ?? '';
-        _fotoPath = result['fotoPath'];
+        _keperluan = result['keperluan'] as String?;
+        _keperluanLainnya = result['keperluanLainnya'] as String? ?? '';
+        _keterangan = result['keterangan'] as String? ?? '';
+        _fotoPaths =
+            (result['fotoPaths'] as List?)?.cast<String>() ?? <String>[];
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Tampilkan loading/error sementara kode tamu belum siap
     if (_kodeTamu == null) {
       return Scaffold(
         backgroundColor: AppColors.formBackground,

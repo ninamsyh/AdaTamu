@@ -21,7 +21,7 @@ class GuestFormPage3 extends StatefulWidget {
   final String? initialKeperluan;
   final String initialKeperluanLainnya;
   final String initialKeterangan;
-  final String? initialFotoPath;
+  final List<String> initialFotoPaths;
 
   const GuestFormPage3({
     super.key,
@@ -33,7 +33,7 @@ class GuestFormPage3 extends StatefulWidget {
     this.initialKeperluan,
     this.initialKeperluanLainnya = '',
     this.initialKeterangan = '',
-    this.initialFotoPath,
+    this.initialFotoPaths = const [],
   });
 
   @override
@@ -48,7 +48,7 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
   Key _lainnyaFieldKey = UniqueKey();
 
   String? _keperluan;
-  File? _foto;
+  List<File> _fotos = [];
   bool _isSaving = false;
   bool _keperluanError = false;
 
@@ -68,8 +68,8 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
     _keperluan = widget.initialKeperluan;
     _keperluanLainnyaController.text = widget.initialKeperluanLainnya;
     _keteranganController.text = widget.initialKeterangan;
-    if (widget.initialFotoPath != null) {
-      _foto = File(widget.initialFotoPath!);
+    if (widget.initialFotoPaths.isNotEmpty) {
+      _fotos = widget.initialFotoPaths.map((p) => File(p)).toList();
     }
   }
 
@@ -88,7 +88,7 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
     }
 
     final bool isPhotoValid =
-        _photoFieldKey.currentState?.validate() ?? (_foto != null);
+        _photoFieldKey.currentState?.validate() ?? _fotos.isNotEmpty;
 
     if (!isFormValid || _keperluan == null || !isPhotoValid) return;
 
@@ -98,7 +98,9 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
         _isLainnya ? _keperluanLainnyaController.text.trim() : _keperluan!;
 
     try {
-      final String fotoUrl = await CloudinaryService.uploadImage(_foto!);
+      final List<String> fotoUrls = await Future.wait(
+        _fotos.map((foto) => CloudinaryService.uploadImage(foto)),
+      );
       final int urutanFinal =
           await GuestService.getNextUrutanHariIni(DateTime.now());
       final String kodeTamuFinal =
@@ -112,7 +114,7 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
         keperluan: keperluanFinal,
         keteranganTambahan: _keteranganController.text.trim(),
         kodeTamu: kodeTamuFinal,
-        fotoUrl: fotoUrl,
+        fotoUrls: fotoUrls,
       );
 
       await GuestService.saveGuest(guest);
@@ -143,7 +145,7 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
           'keperluan': _keperluan,
           'keperluanLainnya': _keperluanLainnyaController.text,
           'keterangan': _keteranganController.text,
-          'fotoPath': _foto?.path,
+          'fotoPaths': _fotos.map((f) => f.path).toList(),
         });
       },
       child: Scaffold(
@@ -228,9 +230,9 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
                         const SizedBox(height: 24),
                         PhotoPickerField(
                           key: _photoFieldKey,
-                          value: _foto,
-                          onChanged: (file) {
-                            setState(() => _foto = file);
+                          value: _fotos,
+                          onChanged: (files) {
+                            setState(() => _fotos = files);
                           },
                         ),
                         const SizedBox(height: 20),
@@ -251,7 +253,9 @@ class _GuestFormPage3State extends State<GuestFormPage3> {
                                               _keperluanLainnyaController.text,
                                           'keterangan':
                                               _keteranganController.text,
-                                          'fotoPath': _foto?.path,
+                                          'fotoPaths': _fotos
+                                              .map((f) => f.path)
+                                              .toList(),
                                         }),
                               ),
                               const SizedBox(width: 12),

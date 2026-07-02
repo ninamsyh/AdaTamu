@@ -29,7 +29,6 @@ class _DashboardPageState extends State<DashboardPage>
       duration: const Duration(milliseconds: 1400),
     );
 
-    // "Selamat Datang" turun dari atas sambil fade-in (0% - 50% durasi).
     _fadeTitle = CurvedAnimation(
       parent: _controller,
       curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
@@ -42,7 +41,6 @@ class _DashboardPageState extends State<DashboardPage>
       curve: const Interval(0.0, 0.5, curve: Curves.easeOutCubic),
     ));
 
-    // Logo muncul membesar dari kecil (30% - 80% durasi).
     _fadeLogo = CurvedAnimation(
       parent: _controller,
       curve: const Interval(0.3, 0.8, curve: Curves.easeOut),
@@ -101,6 +99,7 @@ class _DashboardPageState extends State<DashboardPage>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   FadeTransition(
@@ -114,15 +113,15 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 24),
                   FadeTransition(
                     opacity: _fadeLogo,
                     child: ScaleTransition(
                       scale: _scaleLogo,
-                      child: const AdaTamuLogo(scale: 1.2),
+                      child: const AdaTamuLogo(scale: 1.5),
                     ),
                   ),
-                  const SizedBox(height: 56),
+                  const SizedBox(height: 40),
                   FadeTransition(
                     opacity: _fadeButton,
                     child: AnimatedPillButton(

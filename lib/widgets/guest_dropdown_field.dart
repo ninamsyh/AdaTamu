@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
 class GuestDropdownField extends StatefulWidget {
@@ -22,7 +21,6 @@ class GuestDropdownField extends StatefulWidget {
 
 class GuestDropdownFieldState extends State<GuestDropdownField> {
   String? _errorText;
-
   bool validate() {
     if (widget.value == null) {
       setState(() => _errorText = 'Jenis kelamin tidak boleh kosong');
@@ -63,25 +61,26 @@ class GuestDropdownFieldState extends State<GuestDropdownField> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
-
             color: AppColors.inputFill,
             onSelected: (selected) {
               _clearError();
               widget.onChanged(selected);
             },
-
             itemBuilder: (context) => widget.options
                 .map(
                   (opt) => PopupMenuItem<String>(
                     value: opt,
                     child: Center(
-                      child:
-                          Text(opt, style: GoogleFonts.poppins(fontSize: 14)),
+                      child: Text(opt,
+                          style: TextStyle(
+                            fontFamily: AppTextStyles.fontFamily,
+                            fontSize: 14,
+                          )),
                     ),
                   ),
                 )
                 .toList(),
-
+            // Tampilan field (anchor) bergaya pil putih.
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
@@ -92,11 +91,13 @@ class GuestDropdownFieldState extends State<GuestDropdownField> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Teks rata tengah; ikon diletakkan di kanan.
                   Expanded(
                     child: Text(
                       widget.value ?? 'Pilih',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
+                      style: TextStyle(
+                        fontFamily: AppTextStyles.fontFamily,
                         fontSize: 14,
                         color: widget.value == null
                             ? Colors.black54
@@ -121,7 +122,8 @@ class GuestDropdownFieldState extends State<GuestDropdownField> {
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
+                    style: TextStyle(
+                      fontFamily: AppTextStyles.fontFamily,
                       color: Colors.red,
                       fontSize: 13,
                     ),

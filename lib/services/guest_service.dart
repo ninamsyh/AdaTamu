@@ -222,6 +222,13 @@ class GuestService {
     if (value is DateTime) {
       return {'timestampValue': value.toUtc().toIso8601String()};
     }
+    if (value is List) {
+      return {
+        'arrayValue': {
+          'values': value.map(_toFirestoreValue).toList(),
+        },
+      };
+    }
     return {'stringValue': value.toString()};
   }
 }
