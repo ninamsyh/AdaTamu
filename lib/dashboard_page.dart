@@ -162,7 +162,7 @@ class _DashboardPageState extends State<DashboardPage> {
   DateTime? _tanggalDipilih;
   DateTimeRange? _rentangTanggal;
 
-  static const _menuTitles = ['Dashboard', 'Data Pelanggan', 'Profil'];
+  static const _menuTitles = ['Beranda', 'Data Pelanggan', 'Profil'];
 
   void _selectMenu(int index) {
     setState(() => _selectedIndex = index);
@@ -188,12 +188,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _handleDownload(BuildContext context) {
     if (!kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Unduh data saat ini hanya tersedia di versi web (Chrome/Edge).',
-          ),
-        ),
+      showAppSnackBar(
+        context,
+        'Unduh data saat ini hanya tersedia di versi web (Chrome/Edge).',
+        isError: true,
       );
       return;
     }
@@ -240,9 +238,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     downloadCsv(filename, csv);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Mengunduh $filename...')));
+    showAppSnackBar(context, 'Mengunduh $filename...', isError: false);
   }
 
   String _csvEscape(Object? value) {
@@ -388,7 +384,7 @@ class _Sidebar extends StatelessWidget {
           ),
         ),
         _SidebarMenuItem(
-          label: 'Dashboard',
+          label: 'Beranda',
           icon: Icons.dashboard_outlined,
           selected: selectedIndex == 0,
           onTap: () => onSelect(0),
@@ -427,7 +423,7 @@ class _Sidebar extends StatelessWidget {
                   elevation: 1,
                 ),
                 icon: const Icon(Icons.logout, size: 16),
-                label: const Text('Logout', style: TextStyle(fontSize: 12)),
+                label: const Text('Keluar', style: TextStyle(fontSize: 12)),
               ),
             ),
           ),
@@ -954,12 +950,7 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
           });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal mengubah status: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showAppSnackBar(context, 'Gagal mengubah status: $e', isError: true);
     }
   }
 
