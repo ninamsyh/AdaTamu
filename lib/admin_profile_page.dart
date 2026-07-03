@@ -42,12 +42,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
 
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : null,
-      ),
-    );
+    showAppSnackBar(context, message, isError: isError);
   }
 
   Future<void> _pickAndUploadPhoto() async {
@@ -243,13 +238,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                   labelText: 'Password saat ini',
                   suffixIcon: IconButton(
                     icon: Icon(
-                      obscureCurrent
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscureCurrent ? Icons.visibility_off : Icons.visibility,
                     ),
-                    onPressed: () => setDialogState(
-                      () => obscureCurrent = !obscureCurrent,
-                    ),
+                    onPressed: () =>
+                        setDialogState(() => obscureCurrent = !obscureCurrent),
                   ),
                 ),
               ),
@@ -276,13 +268,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                   labelText: 'Ulangi password baru',
                   suffixIcon: IconButton(
                     icon: Icon(
-                      obscureConfirm
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
                     ),
-                    onPressed: () => setDialogState(
-                      () => obscureConfirm = !obscureConfirm,
-                    ),
+                    onPressed: () =>
+                        setDialogState(() => obscureConfirm = !obscureConfirm),
                   ),
                 ),
               ),
@@ -296,7 +285,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
             ElevatedButton(
               onPressed: () {
                 if (newController.text.length < 6) {
-                  _showSnack('Password baru minimal 6 karakter.', isError: true);
+                  _showSnack(
+                    'Password baru minimal 6 karakter.',
+                    isError: true,
+                  );
                   return;
                 }
                 if (newController.text != confirmController.text) {
@@ -517,10 +509,7 @@ class _ProfileInfoTile extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
-            onPressed: onEdit,
-            child: Text(editLabel),
-          ),
+          TextButton(onPressed: onEdit, child: Text(editLabel)),
         ],
       ),
     );

@@ -35,16 +35,37 @@ class AuthService {
 
   String _normalize(String username) => username.trim().toLowerCase();
 
-  /// Login menggunakan username + password.
+  /// Login menggunakan username ATAU email + password.
+  /// Kalau [identifier] mengandung '@', dianggap email dan langsung
+  /// dipakai. Kalau tidak, dianggap username lalu dicari email-nya
+  /// lewat mapping di koleksi `usernames`.
   Future<UserCredential> login({
-    required String username,
+    required String identifier,
     required String password,
   }) async {
-    final usernameKey = _normalize(username);
-    if (usernameKey.isEmpty || password.isEmpty) {
-      throw AuthServiceException('Username dan password wajib diisi.');
+    final input = identifier.trim();
+    if (input.isEmpty || password.isEmpty) {
+      throw AuthServiceException('Username/Email dan password wajib diisi.');
     }
 
+    final email = await _resolveEmail(input);
+
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw AuthServiceException(_mapErrorMessage(e));
+    }
+  }
+
+  /// Cari email dari sebuah identifier yang bisa berupa email langsung
+  /// atau username (yang perlu di-lookup ke koleksi `usernames`).
+  Future<String> _resolveEmail(String input) async {
+    if (input.contains('@')) return input;
+
+    final usernameKey = _normalize(input);
     final doc = await _firestore
         .collection(_usernameCollection)
         .doc(usernameKey)
@@ -53,17 +74,24 @@ class AuthService {
     if (!doc.exists) {
       throw AuthServiceException('Username tidak ditemukan.');
     }
-
     final email = doc.data()?['email'] as String?;
     if (email == null) {
       throw AuthServiceException('Data akun tidak valid, hubungi admin.');
     }
+    return email;
+  }
 
+  /// Kirim email reset password. Wajib berupa email (bukan username),
+  /// karena link reset dikirim langsung oleh Firebase ke alamat email
+  /// tersebut. Halaman yang dibuka dari link itu (dikelola oleh Firebase)
+  /// sudah berisi form untuk mengisi password baru + konfirmasinya.
+  Future<void> sendPasswordReset(String email) async {
+    final input = email.trim();
+    if (input.isEmpty || !input.contains('@')) {
+      throw AuthServiceException('Masukkan email yang valid.');
+    }
     try {
-      return await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      await _auth.sendPasswordResetEmail(email: input);
     } on FirebaseAuthException catch (e) {
       throw AuthServiceException(_mapErrorMessage(e));
     }
@@ -105,7 +133,9 @@ class AuthService {
       );
     } on FirebaseAuthException catch (e) {
       // ignore: avoid_print
-      print('DEBUG createUserWithEmailAndPassword error: ${e.code} - ${e.message}');
+      print(
+        'DEBUG createUserWithEmailAndPassword error: ${e.code} - ${e.message}',
+      );
       throw AuthServiceException(_mapErrorMessage(e));
     }
 
@@ -220,7 +250,9 @@ class AuthService {
     await _firestore.runTransaction((tx) async {
       final newSnap = await tx.get(newDocRef);
       if (newSnap.exists) {
-        throw AuthServiceException('Username sudah digunakan, pilih yang lain.');
+        throw AuthServiceException(
+          'Username sudah digunakan, pilih yang lain.',
+        );
       }
       tx.set(newDocRef, {
         'uid': user.uid,
