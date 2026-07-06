@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "151667984588",
+    "project_id": "adatamu-bd8c1",
+    "storage_bucket": "adatamu-bd8c1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151667984588:android:5c18c0b6eafd1055149a69",
+        "android_client_info": {
+          "package_name": "com.example.adatamu"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "151667984588-emtuvt5kqi25ms4o3evnm20qgdqfa3ed.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2ej1VrxcmcJaXBpPofxYkDd0PQj211Qk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "151667984588-emtuvt5kqi25ms4o3evnm20qgdqfa3ed.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
