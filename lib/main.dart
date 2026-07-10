@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,13 @@ import 'services/auth_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+=======
+import 'package:flutter/material.dart';
+import 'screens/dashboard_page.dart';
+import 'theme/app_theme.dart';
+
+void main() {
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
   runApp(const AdaTamuApp());
 }
 
@@ -19,6 +27,7 @@ class AdaTamuApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+<<<<<<< HEAD
       title: 'AdaTamu Admin',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(fontFamily: 'Georgia', useMaterial3: true),
@@ -564,6 +573,16 @@ class _LoginTextField extends StatelessWidget {
         ),
         errorStyle: const TextStyle(color: Colors.red, fontSize: 11),
       ),
+=======
+      title: 'AdaTamu',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        fontFamily: AppTextStyles.fontFamily,
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.gradientEnd),
+      ),
+      home: const DashboardPage(),
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
     );
   }
 }

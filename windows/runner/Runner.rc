@@ -90,12 +90,21 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
+<<<<<<< HEAD
             VALUE "FileDescription", "adatamu" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "adatamu" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
             VALUE "OriginalFilename", "adatamu.exe" "\0"
             VALUE "ProductName", "adatamu" "\0"
+=======
+            VALUE "FileDescription", "adatamu_app" "\0"
+            VALUE "FileVersion", VERSION_AS_STRING "\0"
+            VALUE "InternalName", "adatamu_app" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "OriginalFilename", "adatamu_app.exe" "\0"
+            VALUE "ProductName", "adatamu_app" "\0"
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

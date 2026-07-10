@@ -1,3 +1,7 @@
 {
+<<<<<<< HEAD
     "cmake.sourceDirectory": "D:/PKL/Proyek/adatamu/adatamu/linux"
+=======
+    "java.compile.nullAnalysis.mode": "disabled"
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 }

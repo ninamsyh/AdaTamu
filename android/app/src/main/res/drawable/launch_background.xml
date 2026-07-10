@@ -3,10 +3,19 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/white" />
 
+<<<<<<< HEAD
     <!-- You can insert your own image assets here -->
     <!-- <item>
         <bitmap
             android:gravity="center"
             android:src="@mipmap/launch_image" />
     </item> -->
+=======
+    <!-- AdaTamu logo shown while the Flutter engine is starting up -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/launch_image" />
+    </item>
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 </layer-list>

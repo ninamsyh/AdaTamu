@@ -1,6 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<<<<<<< HEAD
     <application
         android:label="adatamu"
+=======
+    <!-- Diperlukan oleh image_picker untuk mengambil foto tamu lewat
+         kamera (lib/widgets/photo_picker_field.dart). Izin galeri tidak
+         perlu dideklarasikan manual karena ditangani sistem (photo
+         picker) di Android versi modern. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:label="AdaTamu"
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -42,4 +54,8 @@
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
+<<<<<<< HEAD
 </manifest>
+=======
+</manifest>
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167

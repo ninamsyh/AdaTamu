@@ -7,9 +7,12 @@
 #include <memory>
 #include <string>
 
+<<<<<<< HEAD
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
 // rendering and input handling
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 class Win32Window {
  public:
   struct Point {
@@ -27,6 +30,7 @@ class Win32Window {
 
   Win32Window();
   virtual ~Win32Window();
+<<<<<<< HEAD
 
   // Creates a win32 window with |title| that is positioned and sized using
   // |origin| and |size|. New windows are created on the default monitor. Window
@@ -59,31 +63,51 @@ class Win32Window {
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
   // inheriting classes can handle.
+=======
+  bool Create(const std::wstring& title, const Point& origin, const Size& size);
+  bool Show();
+  void Destroy();
+  void SetChildContent(HWND content);
+
+  HWND GetHandle();
+  void SetQuitOnClose(bool quit_on_close);
+  RECT GetClientArea();
+
+ protected:
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
   virtual LRESULT MessageHandler(HWND window,
                                  UINT const message,
                                  WPARAM const wparam,
                                  LPARAM const lparam) noexcept;
 
+<<<<<<< HEAD
   // Called when CreateAndShow is called, allowing subclass window-related
   // setup. Subclasses should return false if setup fails.
   virtual bool OnCreate();
 
   // Called when Destroy is called.
+=======
+  virtual bool OnCreate();
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
   virtual void OnDestroy();
 
  private:
   friend class WindowClassRegistrar;
+<<<<<<< HEAD
 
   // OS callback called by message pump. Handles the WM_NCCREATE message which
   // is passed when the non-client area is being created and enables automatic
   // non-client DPI scaling so that the non-client area automatically
   // responds to changes in DPI. All other messages are handled by
   // MessageHandler.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
   static LRESULT CALLBACK WndProc(HWND const window,
                                   UINT const message,
                                   WPARAM const wparam,
                                   LPARAM const lparam) noexcept;
 
+<<<<<<< HEAD
   // Retrieves a class instance pointer for |window|
   static Win32Window* GetThisFromHandle(HWND const window) noexcept;
 
@@ -100,3 +124,16 @@ class Win32Window {
 };
 
 #endif  // RUNNER_WIN32_WINDOW_H_
+=======
+  static Win32Window* GetThisFromHandle(HWND const window) noexcept;
+  static void UpdateTheme(HWND const window);
+  static constexpr int kMinLogicalWidth = 480;
+  static constexpr int kMinLogicalHeight = 640;
+
+  bool quit_on_close_ = false;
+  HWND window_handle_ = nullptr;
+  HWND child_content_ = nullptr;
+};
+
+#endif 
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167

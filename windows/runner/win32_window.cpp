@@ -6,39 +6,54 @@
 #include "resource.h"
 
 namespace {
+<<<<<<< HEAD
 
 /// Window attribute that enables dark mode window decorations.
 ///
 /// Redefined in case the developer's machine has a Windows SDK older than
 /// version 10.0.22000.0.
 /// See: https://docs.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
+<<<<<<< HEAD
 /// Registry key for app theme preference.
 ///
 /// A value of 0 indicates apps should use dark mode. A non-zero or missing
 /// value indicates apps should use light mode.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 constexpr const wchar_t kGetPreferredBrightnessRegKey[] =
   L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
 constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme";
 
+<<<<<<< HEAD
 // The number of Win32Window objects that currently exist.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 static int g_active_window_count = 0;
 
 using EnableNonClientDpiScaling = BOOL __stdcall(HWND hwnd);
 
+<<<<<<< HEAD
 // Scale helper to convert logical scaler values to physical using passed in
 // scale factor
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 int Scale(int source, double scale_factor) {
   return static_cast<int>(source * scale_factor);
 }
 
+<<<<<<< HEAD
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
 // This API is only needed for PerMonitor V1 awareness mode.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   HMODULE user32_module = LoadLibraryA("User32.dll");
   if (!user32_module) {
@@ -55,7 +70,10 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
 
 }  // namespace
 
+<<<<<<< HEAD
 // Manages the Win32Window's window class registration.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 class WindowClassRegistrar {
  public:
   ~WindowClassRegistrar() = default;
@@ -153,7 +171,10 @@ bool Win32Window::Show() {
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
+<<<<<<< HEAD
 // static
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
 LRESULT CALLBACK Win32Window::WndProc(HWND const window,
                                       UINT const message,
                                       WPARAM const wparam,
@@ -200,7 +221,10 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
+<<<<<<< HEAD
         // Size and position the child window.
+=======
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
                    rect.bottom - rect.top, TRUE);
       }
@@ -216,6 +240,19 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+<<<<<<< HEAD
+=======
+
+    case WM_GETMINMAXINFO: {
+      UINT dpi = FlutterDesktopGetDpiForHWND(hwnd);
+      double scale_factor = dpi / 96.0;
+
+      MINMAXINFO* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      info->ptMinTrackSize.x = Scale(kMinLogicalWidth, scale_factor);
+      info->ptMinTrackSize.y = Scale(kMinLogicalHeight, scale_factor);
+      return 0;
+    }
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
@@ -285,4 +322,8 @@ void Win32Window::UpdateTheme(HWND const window) {
     DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
                           &enable_dark_mode, sizeof(enable_dark_mode));
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> d2590e1e307168aba20a080fbe3e5ccfaed21167
