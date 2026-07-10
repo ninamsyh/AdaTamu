@@ -7,16 +7,6 @@ import 'main.dart'; // pakai AppColors yang sudah didefinisikan di main.dart
 import 'services/auth_service.dart';
 import 'utils/csv_downloader.dart';
 
-/// Model satu baris data tamu, dipetakan dari dokumen di collection
-/// `guests` (Firestore). SENGAJA cuma "membaca" collection ini — dashboard
-/// admin tidak pernah menulis/mengubah struktur `guests`, kecuali field
-/// `status` dan `selesaiAt` yang memang sengaja ditulis balik oleh admin
-/// lewat badge status.
-///
-/// Catatan nama field: disesuaikan dengan field yang dipakai form tamu.
-/// Kalau nanti field aslinya beda nama, tinggal ganti key di
-/// `GuestRecord.fromDoc` di bawah ini saja — bagian lain tidak perlu
-/// diubah.
 class GuestRecord {
   final String id;
   final DateTime? tanggal;
@@ -28,10 +18,7 @@ class GuestRecord {
   final String keteranganTambahan;
   final String? fotoUrl;
   final String status;
-  // Waktu tamu mengisi/submit form (dipakai untuk kolom "Waktu Masuk").
   final DateTime? waktuMasuk;
-  // Waktu admin menandai status jadi "selesai" (dipakai untuk kolom
-  // "Waktu Selesai"). Null selama status masih "menunggu".
   final DateTime? waktuSelesai;
 
   const GuestRecord({
@@ -49,16 +36,7 @@ class GuestRecord {
     required this.waktuSelesai,
   });
 
-  /// Dianggap "selesai" HANYA kalau field status persis 'selesai'
-  /// (case-insensitive). Selain itu (termasuk kosong/'-'/status lain
-  /// peninggalan lama seperti 'aktif'/'pending') dianggap "menunggu" —
-  /// dipakai juga oleh statistik dashboard supaya jumlahnya konsisten
-  /// dengan badge di tabel Data Pelanggan.
   bool get sudahSelesai => status.toLowerCase() == 'selesai';
-
-  /// Gabungan semua teks yang bisa dicari lewat kotak "Cari..." di atas
-  /// (dibuat lowercase sekali di sini supaya pencarian efisien & tidak
-  /// perlu lowercase berulang tiap kali dibandingkan).
   String get searchableText => [
     namaLengkap,
     kodeTamu,
@@ -73,8 +51,6 @@ class GuestRecord {
     final data = doc.data();
     return GuestRecord(
       id: doc.id,
-      // Coba field 'tanggalKunjungan' dulu, kalau tidak ada fallback ke
-      // 'createdAt' (waktu server saat dokumen dibuat).
       tanggal: _parseTanggal(data['tanggalKunjungan'] ?? data['createdAt']),
       kodeTamu: _str(data['kodeTamu']),
       namaLengkap: _str(data['nama']),
@@ -86,9 +62,6 @@ class GuestRecord {
       ),
       fotoUrl: (data['fotoUrl'] ?? data['foto']) as String?,
       status: _str(data['status']),
-      // "Waktu Masuk" = saat tamu submit form -> selalu ambil dari
-      // createdAt (timestamp server), bukan dari tanggalKunjungan (yang
-      // biasanya cuma tanggal tanpa jam).
       waktuMasuk: _parseTanggal(data['createdAt']),
       waktuSelesai: _parseTanggal(data['selesaiAt']),
     );
@@ -116,20 +89,16 @@ class GuestRecord {
 
 /// Warna tambahan khusus dashboard
 class _DashColors {
-  static const sidebarDark = AppColors.navy; // navy gelap
-  static const sidebarTop = AppColors.teal; // teal terang (area avatar/topbar)
-  static const menuActive = Color(0xFF0E7E8C); // highlight menu aktif
-  static const bg = Color(0xFFBDBDBD); // background konten abu-abu
-  static const red = Color(0xFFE63946); // tombol logout
+  static const sidebarDark = AppColors.navy;
+  static const sidebarTop = AppColors.teal;
+  static const menuActive = Color(0xFF0E7E8C);
+  static const bg = Color(0xFFBDBDBD);
+  static const red = Color(0xFFE63946);
 }
 
-/// Satu kartu statistik di halaman Dashboard (mis. "Total Pelanggan: 128").
 class _StatItem {
   final String label;
   final String value;
-  // Identitas stat ('total' / 'menunggu' / 'selesai') dipakai untuk
-  // menentukan gradient warna, ikon, dan tujuan navigasi saat kartu
-  // diketuk.
   final String key;
   const _StatItem({
     required this.label,
@@ -146,32 +115,14 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  // 0 = Dashboard, 1 = Data Pelanggan, 2 = Profil Admin
   int _selectedIndex = 0;
   final _searchController = TextEditingController();
-  // Teks yang sedang diketik di kotak "Cari..." -- dipakai untuk
-  // memfilter tabel Data Pelanggan secara real-time.
   String _searchQuery = '';
-
-  // Baris tamu (guests) yang sedang tampil di tabel Data Pelanggan
-  // (setelah difilter tanggal & pencarian). Dipakai supaya tombol
-  // download CSV bisa mengekspor data ASLI yang sedang dilihat admin,
-  // bukan data statis.
   List<GuestRecord> _currentGuestRows = const [];
-
-  // Statistik dashboard (Total Pelanggan / Menunggu / Selesai), dihitung
-  // real-time dari Firestore oleh _DashboardContent lalu dilaporkan balik
-  // ke sini lewat callback -- dipakai supaya tombol download CSV di
-  // halaman Dashboard mengekspor angka yang SAMA dengan yang tampil di
-  // layar, bukan data statis.
   List<_StatItem> _currentStats = const [];
 
-  // ===== State filter tanggal (dipakai khusus halaman Data Pelanggan) =====
   DateTime? _tanggalDipilih;
   DateTimeRange? _rentangTanggal;
-
-  // Filter status (dipicu dari kartu statistik di Beranda: null = semua,
-  // 'menunggu', atau 'selesai'). Dipakai khusus halaman Data Pelanggan.
   String? _statusFilter;
 
   static const _menuTitles = ['Beranda', 'Data Pelanggan', 'Profil'];
@@ -183,10 +134,6 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  /// Dipanggil saat kartu statistik di Beranda (Total/Menunggu/Selesai)
-  /// diketuk -- pindah ke halaman Data Pelanggan sekaligus menerapkan
-  /// filter status yang sesuai ('total' berarti tampilkan semua/tanpa
-  /// filter status).
   void _bukaDataPelangganDenganStatus(String statusKey) {
     setState(() {
       _selectedIndex = 1;
@@ -286,11 +233,6 @@ class _DashboardPageState extends State<DashboardPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 900;
-
-        // Fitur cari, download, dan kalender cuma relevan di halaman Data
-        // Pelanggan (satu-satunya halaman yang punya daftar untuk
-        // dicari/difilter/diunduh). Di Beranda maupun Profil, ketiga
-        // fitur ini disembunyikan sepenuhnya dari top bar.
         final tampilkanAlatPencarian = _selectedIndex == 1;
 
         return Scaffold(
@@ -324,8 +266,6 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: _menuTitles[_selectedIndex],
                         searchController: _searchController,
                         showMenuButton: !isWide,
-                        // Cari, download, dan kalender cuma ditampilkan di
-                        // halaman Data Pelanggan.
                         showTools: tampilkanAlatPencarian,
                         onSearchChanged: tampilkanAlatPencarian
                             ? (value) => setState(() => _searchQuery = value)
@@ -371,8 +311,6 @@ class _DashboardPageState extends State<DashboardPage> {
           }),
           onResetStatus: () => setState(() => _statusFilter = null),
           onRowsChanged: (rows) {
-            // Hindari setState kalau isinya sama persis (mis. rebuild
-            // biasa tanpa data baru).
             if (identical(rows, _currentGuestRows)) return;
             setState(() => _currentGuestRows = rows);
           },
@@ -384,7 +322,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-/// ====================== SIDEBAR ======================
 class _Sidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
@@ -394,8 +331,6 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      // Gradient teal -> navy dari atas ke bawah supaya sidebar tidak
-      // terasa flat/polos, tetap dalam palet warna aplikasi yang sama.
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [AppColors.teal, _DashColors.sidebarDark],
@@ -508,14 +443,10 @@ class _SidebarMenuItem extends StatelessWidget {
   }
 }
 
-/// ====================== TOP BAR ======================
 class _TopBar extends StatelessWidget {
   final String title;
   final TextEditingController searchController;
   final bool showMenuButton;
-  // Kalau false (mis. di halaman Beranda/Profil), kotak cari, tombol
-  // download, dan tombol kalender disembunyikan sepenuhnya -- cuma
-  // ditampilkan di halaman Data Pelanggan.
   final bool showTools;
   final VoidCallback? onDownload;
   final VoidCallback? onCalendarTap;
@@ -535,8 +466,6 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        // Gradient teal -> navy dari kiri ke kanan supaya top bar tidak
-        // terasa flat/polos, tetap dalam palet warna aplikasi yang sama.
         gradient: LinearGradient(
           colors: [AppColors.teal, AppColors.navy],
           begin: Alignment.centerLeft,
@@ -603,11 +532,6 @@ class _TopBar extends StatelessWidget {
               onPressed: onCalendarTap,
             ),
           ] else
-            // Halaman tanpa alat cari/download/kalender (Beranda & Profil):
-            // tidak menampilkan tulisan apa pun, tapi tinggi top bar tetap
-            // disamakan dengan halaman Data Pelanggan (pakai placeholder
-            // TextField yang sama tapi disembunyikan) supaya konten di
-            // bawahnya tidak ikut naik/turun.
             Expanded(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
@@ -637,10 +561,6 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           const SizedBox(width: 12),
-          // Logo AdaTamu di pojok kanan atas navbar. Tanpa background putih
-          // -- cuma tinggi yang dibatasi (lebar menyesuaikan otomatis lewat
-          // BoxFit.contain) supaya rasio gambar tidak gepeng dan tinggi
-          // navbar tidak ikut membesar.
           SizedBox(
             height: 44,
             child: Image.asset(
@@ -654,17 +574,8 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// ====================== KONTEN: DASHBOARD ======================
-/// Kartu statistik ("Total Pelanggan", "Menunggu", "Selesai") dihitung
-/// REAL-TIME dari collection `guests` di Firestore -- bukan angka statis
-/// lagi. "Menunggu"/"Selesai" dihitung dari field `status` tiap dokumen,
-/// pakai definisi yang sama persis dengan `GuestRecord.sudahSelesai` biar
-/// jumlahnya selalu konsisten dengan badge status di tabel Data Pelanggan.
 class _DashboardContent extends StatefulWidget {
   final ValueChanged<List<_StatItem>>? onStatsChanged;
-  // Dipanggil saat salah satu kartu statistik diketuk. Membawa key stat
-  // ('total' / 'menunggu' / 'selesai') supaya parent bisa pindah ke
-  // halaman Data Pelanggan dengan filter status yang sesuai.
   final ValueChanged<String>? onStatusTap;
   const _DashboardContent({this.onStatsChanged, this.onStatusTap});
 
@@ -679,16 +590,7 @@ class _DashboardContentState extends State<_DashboardContent> {
   int _total = 0;
   int _menunggu = 0;
   int _selesai = 0;
-
-  // Semua dokumen mentah dari Firestore (belum difilter bulan), disimpan
-  // supaya bisa dihitung ulang tiap kali filter bulan berubah tanpa perlu
-  // listen ulang ke stream.
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
-
-  // Bulan yang dipilih di dropdown ('semua' = tidak difilter, atau
-  // 'yyyy-MM' untuk bulan+tahun tertentu). Daftar opsi dibangun dari
-  // tanggal yang benar-benar ada di data supaya tidak menampilkan bulan
-  // yang datanya kosong.
   String _selectedMonth = 'semua';
 
   @override
@@ -715,8 +617,6 @@ class _DashboardContentState extends State<_DashboardContent> {
     );
   }
 
-  /// Ambil tanggal satu dokumen tamu (coba 'tanggalKunjungan' dulu, lalu
-  /// fallback ke 'createdAt'), pakai parser yang sama dengan GuestRecord.
   DateTime? _tanggalDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     return GuestRecord._parseTanggal(
@@ -724,12 +624,9 @@ class _DashboardContentState extends State<_DashboardContent> {
     );
   }
 
-  /// Kunci bulan 'yyyy-MM' dari sebuah tanggal, dipakai sebagai value
-  /// dropdown maupun untuk pencocokan filter.
   String _monthKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
 
-  /// Daftar bulan yang tersedia (ada datanya), diurutkan terbaru dulu.
   List<String> _availableMonths() {
     final keys = <String>{};
     for (final doc in _allDocs) {
@@ -755,9 +652,6 @@ class _DashboardContentState extends State<_DashboardContent> {
     'Desember',
   ];
 
-  // Nama bulan ditulis manual (bukan lewat DateFormat locale 'id_ID')
-  // supaya tidak perlu tambahan inisialisasi async
-  // (initializeDateFormatting) di main() hanya demi label dropdown ini.
   String _monthLabel(String key) {
     final parts = key.split('-');
     final year = int.parse(parts[0]);
@@ -799,9 +693,6 @@ class _DashboardContentState extends State<_DashboardContent> {
     _showMonthDataPopup(value);
   }
 
-  /// Tampilkan pop up berisi daftar tamu (format sama seperti tabel di
-  /// halaman Data Pelanggan) untuk bulan yang baru dipilih di dropdown.
-  /// 'semua' menampilkan seluruh data tanpa filter tanggal.
   void _showMonthDataPopup(String monthKey) {
     final rows =
         _allDocs.map(GuestRecord.fromDoc).where((r) {
@@ -825,6 +716,19 @@ class _DashboardContentState extends State<_DashboardContent> {
         rows: rows,
       ),
     );
+  }
+
+  List<GuestRecord> _recentGuests() {
+    final all = _allDocs.map(GuestRecord.fromDoc).toList()
+      ..sort((a, b) {
+        final ta = a.waktuMasuk ?? a.tanggal;
+        final tb = b.waktuMasuk ?? b.tanggal;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta);
+      });
+    return all.take(5).toList();
   }
 
   List<_StatItem> _buildStats() => [
@@ -861,44 +765,17 @@ class _DashboardContentState extends State<_DashboardContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (months.isNotEmpty) ...[
+          if (months.isNotEmpty)
             Align(
               alignment: Alignment.centerRight,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedMonth,
-                    icon: const Icon(Icons.expand_more_rounded, size: 20),
-                    style: const TextStyle(
-                      color: AppColors.darkText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'semua',
-                        child: Text('Semua Bulan'),
-                      ),
-                      ...months.map(
-                        (m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(_monthLabel(m)),
-                        ),
-                      ),
-                    ],
-                    onChanged: _onMonthChanged,
-                  ),
-                ),
+              child: _MonthFilterDropdown(
+                selectedMonth: _selectedMonth,
+                months: months,
+                monthLabelBuilder: _monthLabel,
+                onChanged: _onMonthChanged,
               ),
             ),
-            const SizedBox(height: 16),
-          ],
+          if (months.isNotEmpty) const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
               final narrow = constraints.maxWidth < 500;
@@ -924,10 +801,38 @@ class _DashboardContentState extends State<_DashboardContent> {
             },
           ),
           const SizedBox(height: 20),
-          _StatusChartCard(
-            total: _total,
-            menunggu: _menunggu,
-            selesai: _selesai,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 760;
+              final chart = _StatusChartCard(
+                total: _total,
+                menunggu: _menunggu,
+                selesai: _selesai,
+              );
+              final recent = _RecentGuestsCard(
+                guests: _recentGuests(),
+                onLihatSemua: widget.onStatusTap == null
+                    ? null
+                    : () => widget.onStatusTap!('total'),
+              );
+
+              if (narrow) {
+                return Column(
+                  children: [chart, const SizedBox(height: 16), recent],
+                );
+              }
+
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 6, child: chart),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 5, child: recent),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -935,11 +840,181 @@ class _DashboardContentState extends State<_DashboardContent> {
   }
 }
 
-/// Pop up daftar tamu, dipicu dari dropdown bulan di Beranda. Tabelnya
-/// sengaja dibuat semirip mungkin dengan tabel di halaman Data Pelanggan
-/// (kolom & format sama) tapi read-only — cuma buat intip data cepat
-/// tanpa pindah halaman, jadi tidak ada aksi ubah status/lihat foto besar
-/// di sini.
+class _MonthFilterDropdown extends StatelessWidget {
+  final String selectedMonth;
+  final List<String> months;
+  final String Function(String) monthLabelBuilder;
+  final ValueChanged<String?> onChanged;
+
+  const _MonthFilterDropdown({
+    required this.selectedMonth,
+    required this.months,
+    required this.monthLabelBuilder,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: selectedMonth,
+          icon: const Icon(Icons.expand_more_rounded, size: 16),
+          isDense: true,
+          style: const TextStyle(
+            color: AppColors.darkText,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+          items: [
+            const DropdownMenuItem(
+              value: 'semua',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_month_outlined,
+                    size: 14,
+                    color: Colors.black54,
+                  ),
+                  SizedBox(width: 6),
+                  Text('Semua Bulan'),
+                ],
+              ),
+            ),
+            ...months.map(
+              (m) =>
+                  DropdownMenuItem(value: m, child: Text(monthLabelBuilder(m))),
+            ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentGuestsCard extends StatelessWidget {
+  final List<GuestRecord> guests;
+  final VoidCallback? onLihatSemua;
+  const _RecentGuestsCard({required this.guests, this.onLihatSemua});
+
+  @override
+  Widget build(BuildContext context) {
+    final jamFmt = DateFormat('dd/MM • HH:mm');
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Tamu Terbaru',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.darkText,
+                  ),
+                ),
+              ),
+              if (onLihatSemua != null)
+                TextButton(
+                  onPressed: onLihatSemua,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Lihat Semua',
+                    style: TextStyle(fontSize: 11, color: AppColors.teal),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (guests.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Belum ada tamu yang tercatat.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            )
+          else
+            ...guests.map((g) {
+              final waktu = g.waktuMasuk ?? g.tanggal;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 13,
+                      backgroundColor: AppColors.teal.withOpacity(0.12),
+                      child: const Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: AppColors.teal,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            g.namaLengkap,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.darkText,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            waktu != null ? jamFmt.format(waktu) : '-',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _StatusBadge(status: g.status, compact: true),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
 class _GuestDataPopup extends StatelessWidget {
   final String title;
   final List<GuestRecord> rows;
@@ -1108,8 +1183,6 @@ class _StatCard extends StatelessWidget {
   final VoidCallback? onTap;
   const _StatCard({required this.item, this.onTap});
 
-  /// Gradient & ikon per jenis stat, tetap dalam palet warna aplikasi
-  /// (teal/navy/yellow) supaya konsisten dengan tampilan lain.
   List<Color> get _gradientColors {
     switch (item.key) {
       case 'menunggu':
@@ -1134,8 +1207,6 @@ class _StatCard extends StatelessWidget {
     }
   }
 
-  // Kartu "Menunggu" pakai gradient kuning yang terang, jadi teksnya
-  // dibuat gelap supaya tetap kebaca; dua kartu lain pakai teks putih.
   Color get _textColor =>
       item.key == 'menunggu' ? AppColors.darkText : Colors.white;
 
@@ -1209,10 +1280,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-/// Kartu grafik ringkasan status tamu (donut chart Menunggu vs Selesai),
-/// mengisi ruang kosong di bawah kartu statistik pada halaman Beranda.
-/// Digambar manual pakai CustomPainter (tanpa dependency chart pihak
-/// ketiga) supaya tidak perlu tambahan package.
 class _StatusChartCard extends StatelessWidget {
   final int total;
   final int menunggu;
@@ -1239,18 +1306,18 @@ class _StatusChartCard extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final narrow = constraints.maxWidth < 480;
+          final narrow = constraints.maxWidth < 340;
           final donut = SizedBox(
-            width: 140,
-            height: 140,
+            width: 96,
+            height: 96,
             child: total == 0
                 ? const Center(
                     child: Text(
                       'Belum ada data',
-                      style: TextStyle(fontSize: 12, color: Colors.black45),
+                      style: TextStyle(fontSize: 11, color: Colors.black45),
                       textAlign: TextAlign.center,
                     ),
                   )
@@ -1263,7 +1330,7 @@ class _StatusChartCard extends StatelessWidget {
                           Text(
                             '${(persenSelesai * 100).round()}%',
                             style: const TextStyle(
-                              fontSize: 20,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: AppColors.darkText,
                             ),
@@ -1271,7 +1338,7 @@ class _StatusChartCard extends StatelessWidget {
                           const Text(
                             'Selesai',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 10,
                               color: Colors.black54,
                             ),
                           ),
@@ -1288,24 +1355,24 @@ class _StatusChartCard extends StatelessWidget {
               const Text(
                 'Ringkasan Status Tamu',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                   color: AppColors.darkText,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               _LegendRow(
                 color: AppColors.teal,
                 label: 'Selesai',
                 value: selesai,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _LegendRow(
                 color: AppColors.yellow,
                 label: 'Menunggu',
                 value: menunggu,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _LegendRow(color: AppColors.navy, label: 'Total', value: total),
             ],
           );
@@ -1315,17 +1382,18 @@ class _StatusChartCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 legend,
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
                 Center(child: donut),
               ],
             );
           }
 
           return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(child: legend),
-              const SizedBox(width: 20),
+              Flexible(child: legend),
+              const SizedBox(width: 16),
               donut,
             ],
           );
@@ -1350,14 +1418,14 @@ class _LegendRow extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 10,
-          height: 10,
+          width: 9,
+          height: 9,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 7),
         Text(
           '$label: $value',
-          style: const TextStyle(fontSize: 13, color: AppColors.darkText),
+          style: const TextStyle(fontSize: 12, color: AppColors.darkText),
         ),
       ],
     );
@@ -1372,7 +1440,7 @@ class _DonutChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width < size.height ? size.width : size.height) / 2;
-    const strokeWidth = 18.0;
+    const strokeWidth = 14.0;
     final rect = Rect.fromCircle(
       center: center,
       radius: radius - strokeWidth / 2,
@@ -1401,17 +1469,10 @@ class _DonutChartPainter extends CustomPainter {
       oldDelegate.persenSelesai != persenSelesai;
 }
 
-/// ====================== KONTEN: DATA PELANGGAN ======================
-/// Menampilkan data tamu ASLI dari collection `guests` di Firestore,
-/// real-time (StreamBuilder-style lewat StreamSubscription manual supaya
-/// mudah kirim balik daftar yang sedang tampil ke halaman induk untuk
-/// keperluan download CSV).
 class _DataPelangganContent extends StatefulWidget {
   final DateTime? tanggalDipilih;
   final DateTimeRange? rentangTanggal;
   final String searchQuery;
-  // Filter status dipicu dari kartu statistik di Beranda: null = semua,
-  // 'menunggu', atau 'selesai'.
   final String? statusFilter;
   final VoidCallback onResetFilter;
   final VoidCallback onResetStatus;
@@ -1427,9 +1488,6 @@ class _DataPelangganContent extends StatefulWidget {
     this.onRowsChanged,
   });
 
-  /// Filter daftar baris berdasarkan tanggal tunggal atau rentang tanggal.
-  /// Baris tanpa tanggal (null) otomatis disembunyikan kalau ada filter
-  /// aktif, karena tidak bisa dipastikan cocok atau tidak.
   static List<GuestRecord> filterByDate(
     List<GuestRecord> data,
     DateTime? tanggalDipilih,
@@ -1465,11 +1523,6 @@ class _DataPelangganContent extends StatefulWidget {
     }).toList();
   }
 
-  /// Filter daftar baris berdasarkan teks pencarian, dicocokkan ke nama,
-  /// kode tamu, alamat, keperluan, keterangan tambahan, jenis kelamin,
-  /// dan status (lihat `GuestRecord.searchableText`). Pencocokan
-  /// case-insensitive dan sederhana (substring), cukup untuk kebutuhan
-  /// pencarian cepat di tabel ini.
   static List<GuestRecord> filterBySearch(
     List<GuestRecord> data,
     String query,
@@ -1479,8 +1532,6 @@ class _DataPelangganContent extends StatefulWidget {
     return data.where((row) => row.searchableText.contains(q)).toList();
   }
 
-  /// Filter daftar baris berdasarkan status ('menunggu' / 'selesai').
-  /// Null berarti tidak ada filter status (tampilkan semua).
   static List<GuestRecord> filterByStatus(
     List<GuestRecord> data,
     String? status,
@@ -1503,8 +1554,6 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
   @override
   void initState() {
     super.initState();
-    // Stream dibuat SEKALI di initState (bukan di build) supaya tidak
-    // subscribe ulang setiap kali widget rebuild.
     _guestsStream = FirebaseFirestore.instance.collection('guests').snapshots();
     _guestsStream.listen(
       (snapshot) {
@@ -1514,9 +1563,9 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
             final ta = a.tanggal;
             final tb = b.tanggal;
             if (ta == null && tb == null) return 0;
-            if (ta == null) return 1; // tanpa tanggal ditaruh di bawah
+            if (ta == null) return 1;
             if (tb == null) return -1;
-            return tb.compareTo(ta); // terbaru dulu
+            return tb.compareTo(ta);
           });
         setState(() {
           _allRows = rows;
@@ -1559,10 +1608,6 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     }
   }
 
-  /// Kirim daftar baris yang sedang tampil (setelah filter tanggal +
-  /// pencarian) ke parent lewat callback. Dijadwalkan sesudah frame
-  /// selesai supaya tidak memicu setState di parent saat masih di tengah
-  /// proses build.
   void _reportFiltered() {
     final filtered = _applyAllFilters(_allRows);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1600,13 +1645,7 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     );
   }
 
-  /// Tandai tamu sebagai "selesai". Ini SEKALI JALAN saja (one-shot):
-  /// begitu status berubah jadi "selesai", badge tidak bisa diklik lagi,
-  /// jadi tidak ada jalan untuk mengembalikannya ke "menunggu" dari UI.
-  /// Waktu penyelesaian dicatat di field `selesaiAt` (server timestamp)
-  /// supaya tercatat kapan tepatnya admin menyelesaikannya.
   Future<void> _tandaiSelesai(BuildContext context, GuestRecord guest) async {
-    // Jaga-jaga: kalau entah bagaimana sudah selesai, jangan tulis ulang.
     if (guest.sudahSelesai) return;
 
     final konfirmasi = await showDialog<bool>(
@@ -1669,9 +1708,6 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Breakpoint khusus konten ini: di layar sempit (mis. HP), tabel
-        // horizontal-scroll susah dipakai, jadi ditampilkan sebagai daftar
-        // kartu (satu tamu = satu kartu) supaya tetap enak dibaca.
         final narrow = constraints.maxWidth < 700;
 
         return SingleChildScrollView(
@@ -1924,8 +1960,6 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
   }
 }
 
-/// Kartu satu baris data tamu — dipakai sebagai pengganti DataTable di
-/// layar sempit (lihat breakpoint `narrow` di atas).
 class _GuestCard extends StatelessWidget {
   final int nomor;
   final GuestRecord guest;
@@ -1942,7 +1976,6 @@ class _GuestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tanggalFmt = DateFormat('dd/MM/yyyy');
-    // Cuma jam:menit -- konsisten dengan tampilan tabel di layar lebar.
     final jamFmt = DateFormat('HH:mm');
     return Container(
       decoration: BoxDecoration(
@@ -2088,15 +2121,11 @@ class _CardField extends StatelessWidget {
   }
 }
 
-/// Badge status. Kalau [onTap] diberikan (artinya status masih
-/// "menunggu"), badge bisa diklik SEKALI untuk menandai selesai — begitu
-/// status jadi "selesai", parent akan mengoper `onTap: null` sehingga
-/// badge otomatis tidak bisa diklik lagi (one-shot, tidak ada jalan balik
-/// dari UI).
 class _StatusBadge extends StatelessWidget {
   final String status;
   final VoidCallback? onTap;
-  const _StatusBadge({required this.status, this.onTap});
+  final bool compact;
+  const _StatusBadge({required this.status, this.onTap, this.compact = false});
 
   bool get _isSelesai => status.toLowerCase() == 'selesai';
 
@@ -2107,7 +2136,10 @@ class _StatusBadge extends StatelessWidget {
     final bisaDiklik = onTap != null;
 
     final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 10,
+        vertical: compact ? 3 : 4,
+      ),
       decoration: BoxDecoration(
         color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(12),
@@ -2121,7 +2153,7 @@ class _StatusBadge extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: compact ? 10 : 11,
               color: color,
               fontWeight: FontWeight.w600,
             ),
