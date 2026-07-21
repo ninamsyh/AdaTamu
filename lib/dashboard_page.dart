@@ -1,13 +1,48 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+<<<<<<< HEAD
 import 'dart:ui' as ui;
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 import 'package:intl/intl.dart'; // pastikan package 'intl' sudah ada di pubspec.yaml
 import 'admin_profile_page.dart';
 import 'main.dart'; // pakai AppColors yang sudah didefinisikan di main.dart
 import 'services/auth_service.dart';
 import 'utils/csv_downloader.dart';
 
+<<<<<<< HEAD
+=======
+/// Kategori field yang bisa dipilih admin saat mencari data tamu di
+/// halaman Data Pelanggan. 'semua' mencari di semua field sekaligus
+/// (gabungan `GuestRecord.searchableText`), sisanya membatasi pencarian
+/// ke SATU field saja sesuai yang dipilih lewat dropdown di kotak cari.
+enum SearchCategory { semua, nama, kodeTamu, alamat, keperluan, keterangan, jenisKelamin, status }
+
+extension SearchCategoryLabel on SearchCategory {
+  String get label {
+    switch (this) {
+      case SearchCategory.semua:
+        return 'Semua';
+      case SearchCategory.nama:
+        return 'Nama';
+      case SearchCategory.kodeTamu:
+        return 'Kode Tamu';
+      case SearchCategory.alamat:
+        return 'Alamat';
+      case SearchCategory.keperluan:
+        return 'Keperluan';
+      case SearchCategory.keterangan:
+        return 'Keterangan';
+      case SearchCategory.jenisKelamin:
+        return 'Jenis Kelamin';
+      case SearchCategory.status:
+        return 'Status';
+    }
+  }
+}
+
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 /// Model satu baris data tamu, dipetakan dari dokumen di collection
 /// `guests` (Firestore). SENGAJA cuma "membaca" collection ini — dashboard
 /// admin tidak pernah menulis/mengubah struktur `guests`, kecuali field
@@ -59,6 +94,7 @@ class GuestRecord {
 
   /// Gabungan semua teks yang bisa dicari lewat kotak "Cari..." di atas
   /// (dibuat lowercase sekali di sini supaya pencarian efisien & tidak
+<<<<<<< HEAD
   /// perlu lowercase berulang tiap kali dibandingkan). Mencakup SEMUA
   /// field yang relevan -- termasuk tanggal & waktu -- supaya admin bisa
   /// mencari data pelanggan apa saja lewat satu kotak cari yang sama
@@ -80,6 +116,41 @@ class GuestRecord {
       if (waktuMasuk != null) jamFmt.format(waktuMasuk!),
       if (waktuSelesai != null) jamFmt.format(waktuSelesai!),
     ].join(' ').toLowerCase();
+=======
+  /// perlu lowercase berulang tiap kali dibandingkan).
+  String get searchableText => [
+    namaLengkap,
+    kodeTamu,
+    alamatLengkap,
+    keperluan,
+    keteranganTambahan,
+    jenisKelamin,
+    status,
+  ].join(' ').toLowerCase();
+
+  /// Ambil teks satu field tertentu (sesuai kategori pencarian yang
+  /// dipilih admin lewat dropdown), dipakai oleh `filterBySearch` ketika
+  /// kategorinya bukan `SearchCategory.semua`.
+  String textForCategory(SearchCategory category) {
+    switch (category) {
+      case SearchCategory.semua:
+        return searchableText;
+      case SearchCategory.nama:
+        return namaLengkap.toLowerCase();
+      case SearchCategory.kodeTamu:
+        return kodeTamu.toLowerCase();
+      case SearchCategory.alamat:
+        return alamatLengkap.toLowerCase();
+      case SearchCategory.keperluan:
+        return keperluan.toLowerCase();
+      case SearchCategory.keterangan:
+        return keteranganTambahan.toLowerCase();
+      case SearchCategory.jenisKelamin:
+        return jenisKelamin.toLowerCase();
+      case SearchCategory.status:
+        return status.toLowerCase();
+    }
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   }
 
   factory GuestRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
@@ -163,10 +234,18 @@ class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
   final _searchController = TextEditingController();
   // Teks yang sedang diketik di kotak "Cari..." -- dipakai untuk
+<<<<<<< HEAD
   // memfilter tabel Data Pelanggan secara real-time. Pencarian selalu
   // mencakup SEMUA field sekaligus (lihat `GuestRecord.searchableText`) --
   // tidak ada lagi filter/kategori pencarian terpisah.
   String _searchQuery = '';
+=======
+  // memfilter tabel Data Pelanggan secara real-time.
+  String _searchQuery = '';
+  // Kategori field yang sedang dipilih admin di dropdown kotak cari
+  // ('Semua' secara default -- mencari di semua field sekaligus).
+  SearchCategory _searchCategory = SearchCategory.semua;
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 
   // Baris tamu (guests) yang sedang tampil di tabel Data Pelanggan
   // (setelah difilter tanggal & pencarian). Dipakai supaya tombol
@@ -181,6 +260,7 @@ class _DashboardPageState extends State<DashboardPage> {
   // layar, bukan data statis.
   List<_StatItem> _currentStats = const [];
 
+<<<<<<< HEAD
   // Status buka/tutup sidebar di layar sempit (HP/tablet kecil). Sidebar
   // TIDAK memakai Drawer bawaan Flutter lagi (yang menumpuk/menyembunyikan
   // konten di belakangnya) -- sebagai gantinya lebar sidebar dianimasikan
@@ -205,6 +285,33 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _toggleSidebar() {
     setState(() => _sidebarOpen = !_sidebarOpen);
+=======
+  // Filter status (dipicu dari kartu statistik di Beranda: null = semua,
+  // 'menunggu', atau 'selesai'). Dipakai khusus halaman Data Pelanggan.
+  String? _statusFilter;
+
+  static const _menuTitles = ['Beranda', 'Data Pelanggan', 'Profil'];
+
+  void _selectMenu(int index) {
+    setState(() => _selectedIndex = index);
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// Dipanggil saat kartu statistik di Beranda (Total/Menunggu/Selesai)
+  /// diketuk -- pindah ke halaman Data Pelanggan sekaligus menerapkan
+  /// filter status yang sesuai ('total' berarti tampilkan semua/tanpa
+  /// filter status).
+  void _bukaDataPelangganDenganStatus(String statusKey) {
+    setState(() {
+      _selectedIndex = 1;
+      _statusFilter = statusKey == 'total' ? null : statusKey;
+    });
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   }
 
   void _handleDownload(BuildContext context) {
@@ -287,6 +394,7 @@ class _DashboardPageState extends State<DashboardPage> {
         // dicari/difilter/diunduh). Di Beranda maupun Profil, ketiga
         // fitur ini disembunyikan sepenuhnya dari top bar.
         final tampilkanAlatPencarian = _selectedIndex == 1;
+<<<<<<< HEAD
         // Lebar sidebar saat ini -- selalu 220 di layar lebar, sedangkan
         // di layar sempit mengikuti status buka/tutup (dianimasikan).
         final sidebarWidth = isWide ? 220.0 : (_sidebarOpen ? 220.0 : 0.0);
@@ -319,6 +427,32 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                 ),
+=======
+
+        return Scaffold(
+          backgroundColor: _DashColors.bg,
+          drawer: isWide
+              ? null
+              : Drawer(
+                  width: 220,
+                  backgroundColor: _DashColors.sidebarDark,
+                  child: _Sidebar(
+                    selectedIndex: _selectedIndex,
+                    onSelect: _selectMenu,
+                  ),
+                ),
+          body: SafeArea(
+            child: Row(
+              children: [
+                if (isWide)
+                  SizedBox(
+                    width: 220,
+                    child: _Sidebar(
+                      selectedIndex: _selectedIndex,
+                      onSelect: _selectMenu,
+                    ),
+                  ),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -327,6 +461,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: _menuTitles[_selectedIndex],
                         searchController: _searchController,
                         showMenuButton: !isWide,
+<<<<<<< HEAD
                         onMenuTap: _toggleSidebar,
                         // Cari & download cuma ditampilkan di halaman Data
                         // Pelanggan.
@@ -334,10 +469,23 @@ class _DashboardPageState extends State<DashboardPage> {
                         onSearchChanged: tampilkanAlatPencarian
                             ? (value) => setState(() => _searchQuery = value)
                             : null,
+=======
+                        // Cari, kategori cari, dan download cuma ditampilkan
+                        // di halaman Data Pelanggan.
+                        showTools: tampilkanAlatPencarian,
+                        searchCategory: _searchCategory,
+                        onSearchChanged: tampilkanAlatPencarian
+                            ? (value) => setState(() => _searchQuery = value)
+                            : null,
+                        onSearchCategoryChanged: tampilkanAlatPencarian
+                            ? (value) => setState(() => _searchCategory = value)
+                            : null,
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                         onDownload: tampilkanAlatPencarian
                             ? () => _handleDownload(context)
                             : null,
                       ),
+<<<<<<< HEAD
                       // Indikator halaman yang sedang dibuka, persis di
                       // bawah navbar -- supaya admin selalu tahu sedang ada
                       // di menu apa (Beranda / Data Pelanggan / Profil).
@@ -367,6 +515,8 @@ class _DashboardPageState extends State<DashboardPage> {
                           ],
                         ),
                       ),
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                       Expanded(child: _buildBody()),
                     ],
                   ),
@@ -387,10 +537,20 @@ class _DashboardPageState extends State<DashboardPage> {
             if (identical(stats, _currentStats)) return;
             setState(() => _currentStats = stats);
           },
+<<<<<<< HEAD
+=======
+          onStatusTap: _bukaDataPelangganDenganStatus,
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
         );
       case 1:
         return _DataPelangganContent(
           searchQuery: _searchQuery,
+<<<<<<< HEAD
+=======
+          searchCategory: _searchCategory,
+          statusFilter: _statusFilter,
+          onResetStatus: () => setState(() => _statusFilter = null),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
           onRowsChanged: (rows) {
             // Hindari setState kalau isinya sama persis (mis. rebuild
             // biasa tanpa data baru).
@@ -427,6 +587,7 @@ class _Sidebar extends StatelessWidget {
       ),
       child: Column(
         children: [
+<<<<<<< HEAD
           // Logo AdaTamu menggantikan avatar generik supaya identitas
           // brand langsung terlihat di puncak sidebar.
           Container(
@@ -446,6 +607,15 @@ class _Sidebar extends StatelessWidget {
                   fit: BoxFit.contain,
                 ),
               ),
+=======
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: const CircleAvatar(
+              radius: 28,
+              backgroundColor: Color(0xFFD9D9D9),
+              child: Icon(Icons.person, size: 32, color: Colors.white70),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
             ),
           ),
           _SidebarMenuItem(
@@ -476,7 +646,13 @@ class _Sidebar extends StatelessWidget {
               child: SizedBox(
                 width: 110,
                 child: ElevatedButton.icon(
+<<<<<<< HEAD
                   onPressed: () => _confirmLogout(context),
+=======
+                  onPressed: () async {
+                    await AuthService.instance.logout();
+                  },
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _DashColors.red,
                     foregroundColor: Colors.white,
@@ -496,6 +672,7 @@ class _Sidebar extends StatelessWidget {
       ),
     );
   }
+<<<<<<< HEAD
 
   /// Tampilkan pop up konfirmasi sebelum benar-benar keluar (logout),
   /// supaya tombol "Keluar" tidak ke-klik tidak sengaja.
@@ -525,6 +702,8 @@ class _Sidebar extends StatelessWidget {
       await AuthService.instance.logout();
     }
   }
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 }
 
 class _SidebarMenuItem extends StatelessWidget {
@@ -573,6 +752,7 @@ class _TopBar extends StatelessWidget {
   final String title;
   final TextEditingController searchController;
   final bool showMenuButton;
+<<<<<<< HEAD
   // Dipanggil saat tombol menu (3 garis) diketuk -- buka/tutup sidebar
   // yang bergeser di layar sempit.
   final VoidCallback? onMenuTap;
@@ -582,17 +762,72 @@ class _TopBar extends StatelessWidget {
   final bool showTools;
   final VoidCallback? onDownload;
   final ValueChanged<String>? onSearchChanged;
+=======
+  // Kalau false (mis. di halaman Beranda/Profil), kotak cari, dropdown
+  // kategori, dan tombol download disembunyikan sepenuhnya -- cuma
+  // ditampilkan di halaman Data Pelanggan.
+  final bool showTools;
+  final VoidCallback? onDownload;
+  final ValueChanged<String>? onSearchChanged;
+  // Kategori field yang sedang dipilih untuk pencarian ('Semua' dsb).
+  final SearchCategory searchCategory;
+  final ValueChanged<SearchCategory>? onSearchCategoryChanged;
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 
   const _TopBar({
     required this.title,
     required this.searchController,
     required this.showMenuButton,
     required this.showTools,
+<<<<<<< HEAD
     this.onMenuTap,
     this.onDownload,
     this.onSearchChanged,
   });
 
+=======
+    this.searchCategory = SearchCategory.semua,
+    this.onDownload,
+    this.onSearchChanged,
+    this.onSearchCategoryChanged,
+  });
+
+  /// Dropdown kecil bergaya pil putih untuk memilih kategori field yang
+  /// mau dicari (Nama, Kode Tamu, Alamat, dst). Diletakkan menempel di
+  /// sebelah kiri kotak cari supaya terlihat jelas kalau keduanya
+  /// berhubungan.
+  Widget _buildCategoryDropdown() {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<SearchCategory>(
+          value: searchCategory,
+          isDense: true,
+          icon: const Icon(Icons.arrow_drop_down, size: 18),
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.black87,
+            fontWeight: FontWeight.w500,
+          ),
+          items: SearchCategory.values
+              .map(
+                (c) => DropdownMenuItem(value: c, child: Text(c.label)),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) onSearchCategoryChanged?.call(value);
+          },
+        ),
+      ),
+    );
+  }
+
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -611,9 +846,17 @@ class _TopBar extends StatelessWidget {
           if (showMenuButton)
             IconButton(
               icon: const Icon(Icons.menu, color: Colors.white),
+<<<<<<< HEAD
               onPressed: onMenuTap,
             ),
           if (showTools) ...[
+=======
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          if (showTools) ...[
+            _buildCategoryDropdown(),
+            const SizedBox(width: 8),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
             Expanded(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
@@ -622,9 +865,15 @@ class _TopBar extends StatelessWidget {
                   onChanged: onSearchChanged,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
+<<<<<<< HEAD
                     hintText:
                         'Cari nama, waktu, kelamin, alamat, keperluan, '
                         'keterangan, status...',
+=======
+                    hintText: searchCategory == SearchCategory.semua
+                        ? 'Cari nama, alamat, keperluan, kode tamu...'
+                        : 'Cari berdasarkan ${searchCategory.label}...',
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                     prefixIcon: const Icon(Icons.search, size: 18),
                     suffixIcon: searchController.text.isNotEmpty
                         ? IconButton(
@@ -716,7 +965,15 @@ class _TopBar extends StatelessWidget {
 /// jumlahnya selalu konsisten dengan badge status di tabel Data Pelanggan.
 class _DashboardContent extends StatefulWidget {
   final ValueChanged<List<_StatItem>>? onStatsChanged;
+<<<<<<< HEAD
   const _DashboardContent({this.onStatsChanged});
+=======
+  // Dipanggil saat salah satu kartu statistik diketuk. Membawa key stat
+  // ('total' / 'menunggu' / 'selesai') supaya parent bisa pindah ke
+  // halaman Data Pelanggan dengan filter status yang sesuai.
+  final ValueChanged<String>? onStatusTap;
+  const _DashboardContent({this.onStatsChanged, this.onStatusTap});
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 
   @override
   State<_DashboardContent> createState() => _DashboardContentState();
@@ -851,9 +1108,13 @@ class _DashboardContentState extends State<_DashboardContent> {
 
   /// Tampilkan pop up berisi daftar tamu (format sama seperti tabel di
   /// halaman Data Pelanggan) untuk bulan yang baru dipilih di dropdown.
+<<<<<<< HEAD
   /// 'semua' menampilkan seluruh data tanpa filter tanggal. Popup ini
   /// TIDAK berpindah ke halaman/menu "Data Pelanggan" -- admin tetap
   /// berada di Beranda, cuma diberi jendela intip data cepat.
+=======
+  /// 'semua' menampilkan seluruh data tanpa filter tanggal.
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   void _showMonthDataPopup(String monthKey) {
     final rows =
         _allDocs.map(GuestRecord.fromDoc).where((r) {
@@ -879,6 +1140,7 @@ class _DashboardContentState extends State<_DashboardContent> {
     );
   }
 
+<<<<<<< HEAD
   /// Tampilkan pop up daftar tamu untuk status tertentu ('total' /
   /// 'menunggu' / 'selesai'), dipicu dari kartu statistik. Sama seperti
   /// pop up bulan di atas -- ini SENGAJA berupa pop up, BUKAN berpindah
@@ -922,6 +1184,8 @@ class _DashboardContentState extends State<_DashboardContent> {
     );
   }
 
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   List<_StatItem> _buildStats() => [
     _StatItem(label: 'Total Pelanggan', value: '$_total', key: 'total'),
     _StatItem(label: 'Menunggu', value: '$_menunggu', key: 'menunggu'),
@@ -1008,7 +1272,13 @@ class _DashboardContentState extends State<_DashboardContent> {
                             : (constraints.maxWidth - 32) / 3,
                         child: _StatCard(
                           item: s,
+<<<<<<< HEAD
                           onTap: () => _openStatusPopup(s.key),
+=======
+                          onTap: widget.onStatusTap == null
+                              ? null
+                              : () => widget.onStatusTap!(s.key),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                         ),
                       ),
                     )
@@ -1017,6 +1287,7 @@ class _DashboardContentState extends State<_DashboardContent> {
             },
           ),
           const SizedBox(height: 20),
+<<<<<<< HEAD
           // Kalau filter bulan sedang "Semua Bulan": tampilkan DUA chart
           // sekaligus -- ringkasan status (donut) DAN tren jumlah
           // pelanggan per bulan (diagram batang, lengkap dengan naik/
@@ -1071,10 +1342,18 @@ class _DashboardContentState extends State<_DashboardContent> {
               menunggu: _menunggu,
               selesai: _selesai,
             ),
+=======
+          _StatusChartCard(
+            total: _total,
+            menunggu: _menunggu,
+            selesai: _selesai,
+          ),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
         ],
       ),
     );
   }
+<<<<<<< HEAD
 
   /// Jumlah tamu per bulan ('yyyy-MM' -> jumlah), diurutkan dari bulan
   /// terlama ke terbaru, dipakai oleh diagram batang tren bulanan.
@@ -1103,6 +1382,8 @@ class _DashboardContentState extends State<_DashboardContent> {
     final month = int.parse(parts[1]);
     return _namaBulan[month - 1].substring(0, 3);
   }
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 }
 
 /// Pop up daftar tamu, dipicu dari dropdown bulan di Beranda. Tabelnya
@@ -1571,6 +1852,7 @@ class _DonutChartPainter extends CustomPainter {
       oldDelegate.persenSelesai != persenSelesai;
 }
 
+<<<<<<< HEAD
 /// Kartu diagram batang tren jumlah pelanggan per bulan, lengkap dengan
 /// badge naik/turun (%) dibanding bulan sebelumnya. Melengkapi donut
 /// chart ringkasan status supaya Beranda punya DUA chart: satu untuk
@@ -1776,6 +2058,8 @@ class _BarChartPainter extends CustomPainter {
       oldDelegate.data != data;
 }
 
+=======
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
 /// ====================== KONTEN: DATA PELANGGAN ======================
 /// Menampilkan data tamu ASLI dari collection `guests` di Firestore,
 /// real-time (StreamBuilder-style lewat StreamSubscription manual supaya
@@ -1786,6 +2070,7 @@ class _BarChartPainter extends CustomPainter {
 /// (tidak dikelompokkan ke dalam folder tahun/bulan).
 class _DataPelangganContent extends StatefulWidget {
   final String searchQuery;
+<<<<<<< HEAD
   final ValueChanged<List<GuestRecord>>? onRowsChanged;
 
   const _DataPelangganContent({required this.searchQuery, this.onRowsChanged});
@@ -1800,6 +2085,49 @@ class _DataPelangganContent extends StatefulWidget {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return data;
     return data.where((row) => row.searchableText.contains(q)).toList();
+=======
+  final SearchCategory searchCategory;
+  // Filter status dipicu dari kartu statistik di Beranda: null = semua,
+  // 'menunggu', atau 'selesai'.
+  final String? statusFilter;
+  final VoidCallback onResetStatus;
+  final ValueChanged<List<GuestRecord>>? onRowsChanged;
+
+  const _DataPelangganContent({
+    required this.searchQuery,
+    required this.searchCategory,
+    required this.statusFilter,
+    required this.onResetStatus,
+    this.onRowsChanged,
+  });
+
+  /// Filter daftar baris berdasarkan teks pencarian. Kalau `category`
+  /// adalah `SearchCategory.semua`, dicocokkan ke gabungan semua field
+  /// (lihat `GuestRecord.searchableText`); selain itu, pencarian
+  /// dibatasi hanya ke SATU field sesuai kategori yang dipilih admin.
+  /// Pencocokan case-insensitive dan sederhana (substring).
+  static List<GuestRecord> filterBySearch(
+    List<GuestRecord> data,
+    String query,
+    SearchCategory category,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return data;
+    return data
+        .where((row) => row.textForCategory(category).contains(q))
+        .toList();
+  }
+
+  /// Filter daftar baris berdasarkan status ('menunggu' / 'selesai').
+  /// Null berarti tidak ada filter status (tampilkan semua).
+  static List<GuestRecord> filterByStatus(
+    List<GuestRecord> data,
+    String? status,
+  ) {
+    if (status == null) return data;
+    final wantSelesai = status == 'selesai';
+    return data.where((row) => row.sudahSelesai == wantSelesai).toList();
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   }
 
   @override
@@ -1847,6 +2175,7 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     );
   }
 
+<<<<<<< HEAD
   bool get _searchActive => widget.searchQuery.trim().isNotEmpty;
 
   /// Baris yang benar-benar tampil di tabel -- kalau admin sedang
@@ -1856,12 +2185,38 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     return _searchActive
         ? _DataPelangganContent.filterBySearch(_allRows, widget.searchQuery)
         : _allRows;
+=======
+  // Baris setelah filter status saja (dipakai sebagai basis untuk
+  // pencarian teks di atasnya).
+  List<GuestRecord> get _statusFiltered =>
+      _DataPelangganContent.filterByStatus(_allRows, widget.statusFilter);
+
+  bool get _searchActive => widget.searchQuery.trim().isNotEmpty;
+
+  /// Baris yang benar-benar tampil di tabel: status difilter dulu, lalu
+  /// (kalau admin sedang mencari) disaring lagi berdasarkan teks pencarian.
+  List<GuestRecord> get _visibleRows {
+    final statusFiltered = _statusFiltered;
+    return _searchActive
+        ? _DataPelangganContent.filterBySearch(
+            statusFiltered,
+            widget.searchQuery,
+            widget.searchCategory,
+          )
+        : statusFiltered;
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   }
 
   @override
   void didUpdateWidget(covariant _DataPelangganContent oldWidget) {
     super.didUpdateWidget(oldWidget);
+<<<<<<< HEAD
     if (oldWidget.searchQuery != widget.searchQuery) {
+=======
+    if (oldWidget.statusFilter != widget.statusFilter ||
+        oldWidget.searchQuery != widget.searchQuery ||
+        oldWidget.searchCategory != widget.searchCategory) {
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
       _reportFiltered();
     }
   }
@@ -1958,10 +2313,18 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     // Selalu tampilkan sebagai daftar datar (tidak dikelompokkan ke
     // folder tahun/bulan).
     return _buildTableView(
+<<<<<<< HEAD
       searchChip: _searchActive,
       emptyMessage: _searchActive
           ? 'Tidak ada data yang cocok dengan pencarian.'
           : 'Belum ada data tamu.',
+=======
+      statusChip: widget.statusFilter != null,
+      searchChip: _searchActive,
+      emptyMessage: _searchActive
+          ? 'Tidak ada data yang cocok dengan pencarian.'
+          : 'Tidak ada data untuk status ini.',
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
     );
   }
 
@@ -1984,9 +2347,17 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     );
   }
 
+<<<<<<< HEAD
   /// Tabel/daftar-kartu data tamu, dengan chip kecil yang menunjukkan
   /// kata kunci pencarian yang sedang aktif (kalau ada).
   Widget _buildTableView({
+=======
+  /// Tabel/daftar-kartu data tamu, dipakai baik untuk hasil pencarian
+  /// global maupun filter status -- bedanya cuma chip apa saja yang
+  /// ditampilkan.
+  Widget _buildTableView({
+    required bool statusChip,
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
     required bool searchChip,
     required String emptyMessage,
   }) {
@@ -2004,18 +2375,53 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+<<<<<<< HEAD
               if (searchChip)
+=======
+              if (statusChip || searchChip)
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Wrap(
                     spacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+<<<<<<< HEAD
                       Chip(
                         avatar: const Icon(Icons.search, size: 14),
                         backgroundColor: Colors.white,
                         label: Text('Cari: "${widget.searchQuery.trim()}"'),
                       ),
+=======
+                      if (statusChip)
+                        Chip(
+                          avatar: Icon(
+                            widget.statusFilter == 'selesai'
+                                ? Icons.task_alt_rounded
+                                : Icons.hourglass_top_rounded,
+                            size: 14,
+                          ),
+                          backgroundColor: Colors.white,
+                          label: Text(
+                            'Status: ${widget.statusFilter == 'selesai' ? 'Selesai' : 'Menunggu'}',
+                          ),
+                        ),
+                      if (searchChip)
+                        Chip(
+                          avatar: const Icon(Icons.search, size: 14),
+                          backgroundColor: Colors.white,
+                          label: Text(
+                            'Cari (${widget.searchCategory.label}): '
+                            '"${widget.searchQuery.trim()}"',
+                          ),
+                        ),
+                      if (statusChip)
+                        ActionChip(
+                          avatar: const Icon(Icons.close, size: 14),
+                          label: const Text('Reset Status'),
+                          onPressed: widget.onResetStatus,
+                        ),
+>>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
                     ],
                   ),
                 ),
