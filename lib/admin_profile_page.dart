@@ -1,7 +1,4 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import 'main.dart';
 import 'services/admin_service.dart';
@@ -9,10 +6,12 @@ import 'services/auth_service.dart';
 
 /// Halaman "Profil Admin" — ditampilkan di bawah menu "Data Pelanggan"
 /// di sidebar. Di sini admin bisa:
-///   - Ganti foto profil
 ///   - Ganti username
 ///   - Ganti email
 ///   - Ganti password
+///
+/// Tampilan dibuat ringkas/kompak (mirip layar HP), tanpa foto profil,
+/// hanya berisi form edit data admin.
 ///
 /// SEMUA perubahan data sensitif (username/email/password) wajib minta
 /// password saat ini dulu (reauthentication) lewat dialog konfirmasi —
@@ -25,7 +24,11 @@ class AdminProfilePage extends StatefulWidget {
 }
 
 class _AdminProfilePageState extends State<AdminProfilePage> {
-  bool _uploadingPhoto = false;
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  bool _saving = false;
+  String? _loadedUsername;
+  String? _loadedEmail;
 
   @override
   void initState() {
@@ -40,31 +43,29 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     AuthService.instance.syncEmailIfChanged();
   }
 
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
     showAppSnackBar(context, message, isError: isError);
   }
 
-  Future<void> _pickAndUploadPhoto() async {
-    try {
-      final picker = ImagePicker();
-      final XFile? file = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        imageQuality: 85,
-      );
-      if (file == null) return;
-
-      setState(() => _uploadingPhoto = true);
-      final Uint8List bytes = await file.readAsBytes();
-      await AdminService.instance.uploadProfilePhoto(bytes);
-      _showSnack('Foto profil berhasil diperbarui.');
-    } on AdminServiceException catch (e) {
-      _showSnack(e.message, isError: true);
-    } catch (e) {
-      _showSnack('Gagal mengunggah foto, coba lagi.', isError: true);
-    } finally {
-      if (mounted) setState(() => _uploadingPhoto = false);
+  /// Sinkronkan controller dengan data terbaru dari stream, tapi hanya
+  /// sekali saat pertama kali data datang (atau setelah berhasil simpan)
+  /// supaya tidak menimpa apa yang sedang diketik admin.
+  void _syncControllersIfNeeded(AdminProfile profile) {
+    if (_loadedUsername == null) {
+      _usernameController.text = profile.username;
+      _loadedUsername = profile.username;
+    }
+    if (_loadedEmail == null) {
+      _emailController.text = profile.email;
+      _loadedEmail = profile.email;
     }
   }
 
@@ -107,111 +108,80 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     );
   }
 
-  Future<void> _handleEditUsername(String currentUsername) async {
-    final controller = TextEditingController(text: currentUsername);
-    final newUsername = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ganti Username'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Username baru'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Lanjut'),
-          ),
-        ],
-      ),
-    );
-    if (newUsername == null || newUsername.isEmpty) return;
-    if (newUsername == currentUsername) return;
+  /// Tombol "Simpan" utama di halaman: menyimpan perubahan username
+  /// dan/atau email sekaligus (kalau ada yang diubah dari nilai semula).
+  /// Password tetap punya alur terpisah lewat `_handleChangePassword`
+  /// karena butuh 3 input (password lama, baru, ulangi baru).
+  Future<void> _handleSave() async {
+    final newUsername = _usernameController.text.trim();
+    final newEmail = _emailController.text.trim();
 
-    final password = await _promptCurrentPassword(
-      title: 'Konfirmasi ganti username',
-    );
-    if (password == null || password.isEmpty) return;
-
-    try {
-      await AuthService.instance.updateUsername(
-        newUsername: newUsername,
-        currentPassword: password,
-      );
-      _showSnack('Username berhasil diganti menjadi "$newUsername".');
-    } on AuthServiceException catch (e) {
-      _showSnack(e.message, isError: true);
-    } catch (e) {
-      _showSnack('Gagal mengganti username, coba lagi.', isError: true);
+    if (newUsername.isEmpty) {
+      _showSnack('Username tidak boleh kosong.', isError: true);
+      return;
     }
-  }
+    if (newEmail.isEmpty || !newEmail.contains('@')) {
+      _showSnack('Format email tidak valid.', isError: true);
+      return;
+    }
 
-  Future<void> _handleEditEmail(String currentEmail) async {
-    final controller = TextEditingController(text: currentEmail);
-    final newEmail = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ganti Email'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Email baru'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Lanjut'),
-          ),
-        ],
-      ),
-    );
-    if (newEmail == null || newEmail.isEmpty) return;
-    if (newEmail == currentEmail) return;
+    final usernameChanged = newUsername != _loadedUsername;
+    final emailChanged = newEmail != _loadedEmail;
+
+    if (!usernameChanged && !emailChanged) {
+      _showSnack('Tidak ada perubahan untuk disimpan.');
+      return;
+    }
 
     final password = await _promptCurrentPassword(
-      title: 'Konfirmasi ganti email',
+      title: 'Konfirmasi simpan perubahan',
     );
     if (password == null || password.isEmpty) return;
 
+    setState(() => _saving = true);
     try {
-      await AuthService.instance.updateEmail(
-        newEmail: newEmail,
-        currentPassword: password,
-      );
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Cek Email Baru'),
-          content: Text(
-            'Link konfirmasi sudah dikirim ke $newEmail. Buka email tersebut '
-            'dan klik link-nya untuk menyelesaikan penggantian email. '
-            'Login tetap memakai username & password yang sama seperti '
-            'biasa; sistem akan menyinkronkan otomatis setelah link '
-            'dikonfirmasi.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Mengerti'),
+      if (usernameChanged) {
+        await AuthService.instance.updateUsername(
+          newUsername: newUsername,
+          currentPassword: password,
+        );
+        _loadedUsername = newUsername;
+      }
+      if (emailChanged) {
+        await AuthService.instance.updateEmail(
+          newEmail: newEmail,
+          currentPassword: password,
+        );
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Cek Email Baru'),
+              content: Text(
+                'Link konfirmasi sudah dikirim ke $newEmail. Buka email '
+                'tersebut dan klik link-nya untuk menyelesaikan penggantian '
+                'email. Login tetap memakai username & password yang sama '
+                'seperti biasa; sistem akan menyinkronkan otomatis setelah '
+                'link dikonfirmasi.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Mengerti'),
+                ),
+              ],
             ),
-          ],
-        ),
-      );
+          );
+        }
+      } else {
+        _showSnack('Perubahan berhasil disimpan.');
+      }
     } on AuthServiceException catch (e) {
       _showSnack(e.message, isError: true);
     } catch (e) {
-      _showSnack('Gagal mengganti email, coba lagi.', isError: true);
+      _showSnack('Gagal menyimpan perubahan, coba lagi.', isError: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -336,182 +306,177 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
           return const Center(child: CircularProgressIndicator());
         }
 
+        _syncControllersIfNeeded(profile);
+
+        // Tampilan dibuat ringkas & sempit, mirip layar HP, meskipun
+        // dibuka di layar lebar (web/desktop) — kartu tidak melebar penuh.
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Profil Admin',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.darkText,
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: const Color(0xFFD9D9D9),
-                            backgroundImage: profile.fotoProfilUrl != null
-                                ? NetworkImage(profile.fotoProfilUrl!)
-                                : null,
-                            child: profile.fotoProfilUrl == null
-                                ? const Icon(
-                                    Icons.person,
-                                    size: 52,
-                                    color: Colors.white70,
-                                  )
-                                : null,
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Username',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
                           ),
-                          Material(
-                            color: AppColors.teal,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: _uploadingPhoto
-                                  ? null
-                                  : _pickAndUploadPhoto,
-                              child: Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: _uploadingPhoto
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.camera_alt,
-                                        size: 16,
-                                        color: Colors.white,
-                                      ),
-                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _usernameController,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.person_outline,
+                              size: 18,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        profile.username,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.darkText,
                         ),
-                      ),
-                      Text(
-                        profile.email,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Email',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.email_outlined,
+                              size: 18,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Password',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.lock_outline,
+                              size: 18,
+                              color: Colors.black45,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '••••••••',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.darkText,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _handleChangePassword,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'Ganti',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 40,
+                          child: ElevatedButton(
+                            onPressed: _saving ? null : _handleSave,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.teal,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Simpan',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _ProfileInfoTile(
-                  icon: Icons.person_outline,
-                  label: 'Username',
-                  value: profile.username,
-                  onEdit: () => _handleEditUsername(profile.username),
-                ),
-                const SizedBox(height: 12),
-                _ProfileInfoTile(
-                  icon: Icons.email_outlined,
-                  label: 'Email',
-                  value: profile.email,
-                  onEdit: () => _handleEditEmail(profile.email),
-                ),
-                const SizedBox(height: 12),
-                _ProfileInfoTile(
-                  icon: Icons.lock_outline,
-                  label: 'Password',
-                  value: '••••••••',
-                  editLabel: 'Ganti',
-                  onEdit: _handleChangePassword,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
       },
-    );
-  }
-}
-
-class _ProfileInfoTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String editLabel;
-  final VoidCallback onEdit;
-
-  const _ProfileInfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.onEdit,
-    this.editLabel = 'Edit',
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppColors.teal),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.darkText,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          TextButton(onPressed: onEdit, child: Text(editLabel)),
-        ],
-      ),
     );
   }
 }

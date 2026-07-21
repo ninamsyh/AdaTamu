@@ -124,9 +124,10 @@ class AdminService {
   Stream<AdminProfile?> streamCurrentProfile() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return Stream.value(null);
-    return _admins.doc(uid).snapshots().map(
-          (doc) => doc.exists ? AdminProfile.fromDoc(doc) : null,
-        );
+    return _admins
+        .doc(uid)
+        .snapshots()
+        .map((doc) => doc.exists ? AdminProfile.fromDoc(doc) : null);
   }
 
   /// Update username dan/atau foto profil admin yang sedang login.
