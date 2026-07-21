@@ -124,16 +124,10 @@ class AdminService {
   Stream<AdminProfile?> streamCurrentProfile() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return Stream.value(null);
-<<<<<<< HEAD
     return _admins
         .doc(uid)
         .snapshots()
         .map((doc) => doc.exists ? AdminProfile.fromDoc(doc) : null);
-=======
-    return _admins.doc(uid).snapshots().map(
-          (doc) => doc.exists ? AdminProfile.fromDoc(doc) : null,
-        );
->>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
   }
 
   /// Update username dan/atau foto profil admin yang sedang login.
@@ -233,8 +227,4 @@ class AdminServiceException implements Exception {
 
   @override
   String toString() => message;
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> dc3a8cbdd3fa8e0af323a568d57817c26de6433f
