@@ -391,9 +391,7 @@ class _DashboardPageState extends State<DashboardPage> {
         // lebar (sidebar mendorong konten, ada ruang cukup), TERTUTUP
         // di layar sempit (supaya konten tidak langsung terhimpit
         // begitu app dibuka di HP).
-        final sidebarOpen = _sidebarManuallyToggled
-            ? _sidebarOpen
-            : !isNarrow;
+        final sidebarOpen = _sidebarManuallyToggled ? _sidebarOpen : !isNarrow;
 
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,14 +405,13 @@ class _DashboardPageState extends State<DashboardPage> {
               // masuk/keluar kapan saja.
               showMenuButton: true,
               onMenuTap: () => _toggleSidebar(sidebarOpen),
-              // Cari & download cuma ditampilkan di halaman Data
-              // Pelanggan.
+              // Cari cuma ditampilkan di halaman Data Pelanggan. Tombol
+              // unduh/ekspor SUDAH DIPINDAH ke samping filter bulan di
+              // halaman Data Pelanggan itu sendiri (lihat
+              // `_buildTableView`), jadi tidak ada lagi di top bar ini.
               showTools: tampilkanAlatPencarian,
               onSearchChanged: tampilkanAlatPencarian
                   ? (value) => setState(() => _searchQuery = value)
-                  : null,
-              onDownload: tampilkanAlatPencarian
-                  ? () => _handleDownload(context)
                   : null,
             ),
             // Breadcrumb halaman yang sedang dibuka, persis di
@@ -424,10 +421,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Container(
               width: double.infinity,
               color: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   GestureDetector(
@@ -483,9 +477,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     Positioned.fill(
                       child: GestureDetector(
                         onTap: _closeSidebar,
-                        child: Container(
-                          color: Colors.black.withOpacity(0.35),
-                        ),
+                        child: Container(color: Colors.black.withOpacity(0.35)),
                       ),
                     ),
                   AnimatedPositioned(
@@ -570,6 +562,7 @@ class _DashboardPageState extends State<DashboardPage> {
             if (identical(rows, _currentGuestRows)) return;
             setState(() => _currentGuestRows = rows);
           },
+          onDownload: () => _handleDownload(context),
         );
       case 2:
       default:
@@ -759,11 +752,11 @@ class _TopBar extends StatelessWidget {
   // Dipanggil saat tombol menu (3 garis) diketuk -- buka/tutup sidebar
   // yang bergeser di layar sempit.
   final VoidCallback? onMenuTap;
-  // Kalau false (mis. di halaman Beranda/Profil), kotak cari dan tombol
-  // download disembunyikan sepenuhnya -- cuma ditampilkan di halaman
-  // Data Pelanggan.
+  // Kalau false (mis. di halaman Beranda/Profil), kotak cari
+  // disembunyikan sepenuhnya -- cuma ditampilkan di halaman Data
+  // Pelanggan. Tombol unduh/ekspor tidak lagi ada di top bar ini --
+  // sudah dipindah ke samping filter bulan di halaman Data Pelanggan.
   final bool showTools;
-  final VoidCallback? onDownload;
   final ValueChanged<String>? onSearchChanged;
 
   const _TopBar({
@@ -772,7 +765,6 @@ class _TopBar extends StatelessWidget {
     required this.showMenuButton,
     required this.showTools,
     this.onMenuTap,
-    this.onDownload,
     this.onSearchChanged,
   });
 
@@ -833,15 +825,9 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            IconButton(
-              icon: const Icon(Icons.download_outlined, color: Colors.white),
-              tooltip: 'Unduh data sebagai CSV',
-              onPressed: onDownload,
-            ),
           ] else
-            // Halaman tanpa alat cari/download/kalender (Beranda & Profil):
-            // tidak menampilkan tulisan apa pun, tapi tinggi top bar tetap
+            // Halaman tanpa alat cari (Beranda & Profil): tidak
+            // menampilkan tulisan apa pun, tapi tinggi top bar tetap
             // disamakan dengan halaman Data Pelanggan (pakai placeholder
             // TextField yang sama tapi disembunyikan) supaya konten di
             // bawahnya tidak ikut naik/turun.
@@ -1718,8 +1704,17 @@ class _DonutChartPainter extends CustomPainter {
 class _DataPelangganContent extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<List<GuestRecord>>? onRowsChanged;
+  // Dipanggil saat tombol ekspor (di samping filter bulan) ditekan.
+  // Null kalau memang belum ada aksi unduh yang bisa dijalankan (mis.
+  // tidak di web) -- ditangani sepenuhnya oleh pemanggil (`_handleDownload`
+  // di `_DashboardPageState`).
+  final VoidCallback? onDownload;
 
-  const _DataPelangganContent({required this.searchQuery, this.onRowsChanged});
+  const _DataPelangganContent({
+    required this.searchQuery,
+    this.onRowsChanged,
+    this.onDownload,
+  });
 
   /// Filter daftar baris berdasarkan teks pencarian. Dicocokkan ke
   /// gabungan SEMUA field tamu sekaligus (lihat `GuestRecord.
@@ -1752,6 +1747,27 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
   // membuka pop up).
   String _selectedMonth = 'semua';
 
+  // ====================== PAGINASI TABEL ======================
+  // Pilihan jumlah baris per halaman yang bisa dipilih user lewat
+  // dropdown "Tampilkan". Halaman aktif disimpan zero-based
+  // (_currentPage 0 = halaman 1).
+  static const List<int> rowsPerPageOptions = [5, 15, 30, 50];
+  int _rowsPerPage = rowsPerPageOptions[1]; // default 15
+  int _currentPage = 0;
+
+  void _onRowsPerPageChanged(int value) {
+    if (value == _rowsPerPage) return;
+    setState(() {
+      _rowsPerPage = value;
+      _currentPage = 0; // balik ke halaman pertama tiap ganti ukuran halaman
+    });
+  }
+
+  void _goToPage(int page) {
+    if (page == _currentPage) return;
+    setState(() => _currentPage = page);
+  }
+
   /// Kunci bulan 'yyyy-MM' dari sebuah tanggal.
   String _monthKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
@@ -1780,7 +1796,10 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
 
   void _onMonthChanged(String? value) {
     if (value == null || value == _selectedMonth) return;
-    setState(() => _selectedMonth = value);
+    setState(() {
+      _selectedMonth = value;
+      _currentPage = 0; // filter berubah -> balik ke halaman pertama
+    });
     _reportFiltered();
   }
 
@@ -1839,10 +1858,42 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     return rows;
   }
 
+  /// Total halaman untuk `totalRows` baris, minimal 1 supaya UI paginasi
+  /// tetap punya sesuatu untuk ditampilkan walau datanya kosong.
+  int _totalPagesFor(int totalRows) {
+    if (totalRows == 0) return 1;
+    return (totalRows / _rowsPerPage).ceil();
+  }
+
+  /// Potongan baris yang benar-benar ditampilkan di halaman saat ini.
+  /// Mengoreksi `_currentPage` kalau sudah keluar dari jangkauan (mis.
+  /// setelah data berkurang atau ukuran halaman berubah) memakai
+  /// `addPostFrameCallback` supaya tidak memicu setState di tengah build.
+  List<GuestRecord> _pagedRows(List<GuestRecord> rows) {
+    final totalPages = _totalPagesFor(rows.length);
+    var page = _currentPage;
+    if (page >= totalPages) {
+      final corrected = totalPages - 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _currentPage = corrected);
+      });
+      page = corrected;
+    }
+    if (page < 0) page = 0;
+    final start = page * _rowsPerPage;
+    if (start >= rows.length) return const [];
+    final end = (start + _rowsPerPage) > rows.length
+        ? rows.length
+        : start + _rowsPerPage;
+    return rows.sublist(start, end);
+  }
+
   @override
   void didUpdateWidget(covariant _DataPelangganContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.searchQuery != widget.searchQuery) {
+      _currentPage = 0; // pencarian berubah -> balik ke halaman pertama
       _reportFiltered();
     }
   }
@@ -1947,45 +1998,73 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (months.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedMonth,
-                    icon: const Icon(Icons.expand_more_rounded, size: 20),
-                    style: const TextStyle(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Tombol ekspor -- SEBELUMNYA ada di pojok kanan atas
+                // (top bar), sekarang dipindah ke sini (samping filter
+                // bulan) supaya aksi "pilih bulan" & "ekspor data bulan
+                // itu" berdekatan. Ikon diganti dari ikon download jadi
+                // ikon ekspor (kotak dengan panah keluar).
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.ios_share_rounded,
+                      size: 20,
                       color: AppColors.darkText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
                     ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'semua',
-                        child: Text('Semua Bulan'),
-                      ),
-                      ...months.map(
-                        (m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(_monthLabel(m)),
-                        ),
-                      ),
-                    ],
-                    onChanged: _onMonthChanged,
+                    tooltip: 'Ekspor data sebagai CSV',
+                    onPressed: widget.onDownload,
                   ),
                 ),
-              ),
+                if (months.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedMonth,
+                        icon: const Icon(Icons.expand_more_rounded, size: 20),
+                        style: const TextStyle(
+                          color: AppColors.darkText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: 'semua',
+                            child: Text('Semua Bulan'),
+                          ),
+                          ...months.map(
+                            (m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(_monthLabel(m)),
+                            ),
+                          ),
+                        ],
+                        onChanged: _onMonthChanged,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
+        ),
         Expanded(
           // Selalu tampilkan sebagai daftar datar (tidak dikelompokkan ke
           // folder tahun/bulan).
@@ -2024,6 +2103,9 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
     required String emptyMessage,
   }) {
     final dataTerfilter = _visibleRows;
+    final pagedRows = _pagedRows(dataTerfilter);
+    final totalPages = _totalPagesFor(dataTerfilter.length);
+    final startIndex = _currentPage * _rowsPerPage;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2052,18 +2134,23 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                     ],
                   ),
                 ),
+              if (dataTerfilter.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildRowsPerPageSelector(),
+                ),
               if (dataTerfilter.isEmpty)
                 _buildEmptyBox(
                   _allRows.isEmpty ? 'Belum ada data tamu.' : emptyMessage,
                 )
               else if (narrow)
                 Column(
-                  children: List.generate(dataTerfilter.length, (i) {
-                    final r = dataTerfilter[i];
+                  children: List.generate(pagedRows.length, (i) {
+                    final r = pagedRows[i];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _GuestCard(
-                        nomor: i + 1,
+                        nomor: startIndex + i + 1,
                         guest: r,
                         onTandaiSelesai: () => _tandaiSelesai(context, r),
                         onFotoTap: r.fotoUrl == null
@@ -2106,15 +2193,15 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                         DataColumn(label: Text('Foto')),
                         DataColumn(label: Text('Status')),
                       ],
-                      rows: List<DataRow>.generate(dataTerfilter.length, (i) {
-                        final r = dataTerfilter[i];
+                      rows: List<DataRow>.generate(pagedRows.length, (i) {
+                        final r = pagedRows[i];
                         final tanggalFmt = DateFormat('dd/MM/yyyy');
                         // Cuma jam:menit -- tanggalnya sudah ada di kolom
                         // "Tanggal" tersendiri, jadi tidak perlu diulang.
                         final jamFmt = DateFormat('HH:mm');
                         return DataRow(
                           cells: [
-                            DataCell(Text('${i + 1}')),
+                            DataCell(Text('${startIndex + i + 1}')),
                             DataCell(
                               Text(
                                 r.tanggal != null
@@ -2223,10 +2310,186 @@ class _DataPelangganContentState extends State<_DataPelangganContent> {
                     ),
                   ),
                 ),
+              if (dataTerfilter.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: _buildPaginationBar(
+                    totalRows: dataTerfilter.length,
+                    totalPages: totalPages,
+                  ),
+                ),
             ],
           ),
         );
       },
+    );
+  }
+
+  // ====================== UI PAGINASI ======================
+
+  /// Dropdown "Tampilkan: 5 / 15 / 30 / 50" untuk memilih berapa baris
+  /// yang ditampilkan per halaman. Warna disesuaikan dengan palet app
+  /// (teal untuk aksen aktif).
+  Widget _buildRowsPerPageSelector() {
+    return Wrap(
+      spacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Text(
+          'Tampilkan:',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.darkText,
+          ),
+        ),
+        ..._DataPelangganContentState.rowsPerPageOptions.map((n) {
+          final active = n == _rowsPerPage;
+          return _PageChipButton(
+            label: '$n',
+            active: active,
+            onTap: () => _onRowsPerPageChanged(n),
+          );
+        }),
+      ],
+    );
+  }
+
+  /// Baris footer paginasi bergaya "Total : N Rows" + tombol
+  /// First / < / nomor halaman / > / Last, mengikuti referensi desain
+  /// yang diberikan, memakai palet warna app (teal untuk halaman aktif).
+  Widget _buildPaginationBar({
+    required int totalRows,
+    required int totalPages,
+  }) {
+    var current = _currentPage;
+    if (current < 0) current = 0;
+    if (current > totalPages - 1) current = totalPages - 1;
+    final windowPages = _pageWindow(current, totalPages);
+    final isFirst = current == 0;
+    final isLast = current >= totalPages - 1;
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          'Total : $totalRows Rows',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.darkText,
+          ),
+        ),
+        Wrap(
+          spacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _PageChipButton(
+              label: 'First',
+              enabled: !isFirst,
+              onTap: () => _goToPage(0),
+            ),
+            _PageChipButton(
+              icon: Icons.chevron_left,
+              enabled: !isFirst,
+              onTap: () => _goToPage(current - 1),
+            ),
+            for (final p in windowPages)
+              _PageChipButton(
+                label: '${p + 1}',
+                active: p == current,
+                onTap: () => _goToPage(p),
+              ),
+            _PageChipButton(
+              icon: Icons.chevron_right,
+              enabled: !isLast,
+              onTap: () => _goToPage(current + 1),
+            ),
+            _PageChipButton(
+              label: 'Last',
+              enabled: !isLast,
+              onTap: () => _goToPage(totalPages - 1),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Jendela nomor halaman yang ditampilkan (maks 4 tombol angka),
+  /// digeser supaya `current` selalu terlihat -- sama seperti pola pada
+  /// referensi desain (mis. total 19 halaman tetap cuma tampil 4 nomor).
+  List<int> _pageWindow(int current, int totalPages, {int windowSize = 4}) {
+    if (totalPages <= windowSize) {
+      return List.generate(totalPages, (i) => i);
+    }
+    var start = current - (windowSize ~/ 2);
+    if (start < 0) start = 0;
+    var end = start + windowSize;
+    if (end > totalPages) {
+      end = totalPages;
+      start = end - windowSize;
+    }
+    return List.generate(end - start, (i) => start + i);
+  }
+}
+
+/// Tombol kecil bergaya "chip" dipakai untuk kontrol paginasi (First,
+/// Prev, nomor halaman, Next, Last) maupun pilihan "Tampilkan" jumlah
+/// baris per halaman. Halaman/pilihan aktif memakai warna teal solid
+/// (AppColors.teal) sesuai palet app; nonaktif abu muda; disabled pudar.
+class _PageChipButton extends StatelessWidget {
+  final String? label;
+  final IconData? icon;
+  final bool active;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _PageChipButton({
+    this.label,
+    this.icon,
+    this.active = false,
+    this.enabled = true,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = active ? AppColors.teal : const Color(0xFFF0F0F0);
+    final fg = active
+        ? Colors.white
+        : (enabled ? AppColors.darkText : Colors.grey.shade400);
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.6,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: enabled ? onTap : null,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Center(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: icon != null
+                  ? Icon(icon, size: 16, color: fg)
+                  : Text(
+                      label ?? '',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
