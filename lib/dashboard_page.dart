@@ -258,15 +258,19 @@ class _DashboardPageState extends State<DashboardPage> {
   // layar, bukan data statis.
   List<_StatItem> _currentStats = const [];
 
-  // Status buka/tutup sidebar di layar sempit (HP/tablet kecil). Sidebar
-  // TIDAK memakai Drawer bawaan Flutter lagi (yang menumpuk/menyembunyikan
-  // konten di belakangnya) -- sebagai gantinya lebar sidebar dianimasikan
-  // dari 0 ke 220 sehingga konten di sebelahnya benar-benar bergeser ke
-  // samping (efek "menarik" konten), bukan disembunyikan di belakang
-  // overlay gelap. Defaultnya TERBUKA (di semua ukuran layar) -- tombol
-  // 3-garis di navbar selalu tampil dan bisa dipakai untuk buka/tutup
-  // kapan saja, bukan cuma di layar sempit.
+  // Status buka/tutup sidebar. Perilakunya kini menyesuaikan lebar layar
+  // (lihat breakpoint `isNarrow` di `build`):
+  //   - Layar LEBAR (tablet/laptop/desktop): sidebar "mendorong" konten
+  //     (memakan ruang lewat Row) -- sama seperti sebelumnya.
+  //   - Layar SEMPIT (HP): sidebar jadi overlay yang melayang DI ATAS
+  //     konten (seperti Drawer), supaya konten tidak pernah "terhimpit"
+  //     jadi terlalu sempit lalu overflow.
+  // Sebelum admin pernah menekan tombol menu (3-garis) secara manual,
+  // status terbuka/tertutup ini otomatis mengikuti lebar layar (terbuka
+  // di layar lebar, tertutup di layar sempit). Setelah admin menekannya
+  // sekali, pilihannya dihormati sampai ditekan lagi.
   bool _sidebarOpen = true;
+  bool _sidebarManuallyToggled = false;
 
   static const _menuTitles = ['Beranda', 'Data Pelanggan', 'Profil'];
   static const _menuIcons = [
@@ -281,8 +285,21 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
-  void _toggleSidebar() {
-    setState(() => _sidebarOpen = !_sidebarOpen);
+  void _toggleSidebar(bool currentlyOpen) {
+    setState(() {
+      _sidebarOpen = !currentlyOpen;
+      _sidebarManuallyToggled = true;
+    });
+  }
+
+  // Dipanggil saat admin mengetuk area gelap di luar sidebar (overlay,
+  // layar sempit) atau setelah memilih menu di layar sempit -- supaya
+  // sidebar otomatis menutup lagi begitu selesai dipakai.
+  void _closeSidebar() {
+    setState(() {
+      _sidebarOpen = false;
+      _sidebarManuallyToggled = true;
+    });
   }
 
   void _handleDownload(BuildContext context) {
@@ -363,20 +380,150 @@ class _DashboardPageState extends State<DashboardPage> {
         // dicari/difilter/diunduh). Di Beranda maupun Profil, ketiga
         // fitur ini disembunyikan sepenuhnya dari top bar.
         final tampilkanAlatPencarian = _selectedIndex == 1;
-        // Lebar sidebar saat ini -- SELALU mengikuti status buka/tutup
-        // (dianimasikan), di layar lebar maupun sempit. Tombol 3-garis di
-        // navbar selalu tampil untuk menggeser sidebar ini masuk/keluar.
-        final sidebarWidth = _sidebarOpen ? 220.0 : 0.0;
 
+        // Breakpoint utama layout: di bawah ini dianggap "layar sempit"
+        // (HP, termasuk HP dalam mode landscape kecil). Di atasnya
+        // dianggap tablet/laptop/desktop.
+        final isNarrow = constraints.maxWidth < 700;
+
+        // Sebelum admin pernah menekan tombol menu secara manual,
+        // status buka/tutup mengikuti lebar layar: TERBUKA di layar
+        // lebar (sidebar mendorong konten, ada ruang cukup), TERTUTUP
+        // di layar sempit (supaya konten tidak langsung terhimpit
+        // begitu app dibuka di HP).
+        final sidebarOpen = _sidebarManuallyToggled
+            ? _sidebarOpen
+            : !isNarrow;
+
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TopBar(
+              title: _menuTitles[_selectedIndex],
+              searchController: _searchController,
+              // Tombol menu (3 garis) SELALU tampil -- di layar
+              // lebar maupun sempit -- persis seperti admin panel
+              // pada umumnya, supaya sidebar bisa ditarik
+              // masuk/keluar kapan saja.
+              showMenuButton: true,
+              onMenuTap: () => _toggleSidebar(sidebarOpen),
+              // Cari & download cuma ditampilkan di halaman Data
+              // Pelanggan.
+              showTools: tampilkanAlatPencarian,
+              onSearchChanged: tampilkanAlatPencarian
+                  ? (value) => setState(() => _searchQuery = value)
+                  : null,
+              onDownload: tampilkanAlatPencarian
+                  ? () => _handleDownload(context)
+                  : null,
+            ),
+            // Breadcrumb halaman yang sedang dibuka, persis di
+            // bawah navbar -- selalu diawali "Menu" (root, bisa
+            // diklik buat balik ke Beranda), lalu nama halaman
+            // yang sedang aktif (Beranda/Data Pelanggan/Profil).
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: _selectedIndex == 0 ? null : () => _selectMenu(0),
+                    child: Text(
+                      'Menu',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: _DashColors.breadcrumbMuted,
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      '/',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _DashColors.breadcrumbMuted,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _menuTitles[_selectedIndex],
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.teal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _buildBody()),
+          ],
+        );
+
+        if (isNarrow) {
+          // Layar sempit (HP): sidebar jadi overlay yang melayang DI
+          // ATAS konten (mirip Drawer), BUKAN mendorong konten seperti
+          // di layar lebar -- supaya konten selalu punya lebar penuh
+          // dan tidak pernah terhimpit jadi terlalu sempit.
+          return Scaffold(
+            backgroundColor: _DashColors.bg,
+            body: SafeArea(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: content),
+                  // Area gelap semi-transparan di luar sidebar -- tap di
+                  // sini untuk menutup sidebar lagi.
+                  if (sidebarOpen)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: _closeSidebar,
+                        child: Container(
+                          color: Colors.black.withOpacity(0.35),
+                        ),
+                      ),
+                    ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeInOut,
+                    left: sidebarOpen ? 0 : -220,
+                    top: 0,
+                    bottom: 0,
+                    width: 220,
+                    child: Material(
+                      elevation: 8,
+                      child: _Sidebar(
+                        selectedIndex: _selectedIndex,
+                        onSelect: (index) {
+                          _selectMenu(index);
+                          // Otomatis tutup sidebar setelah memilih menu
+                          // di layar sempit -- supaya langsung terlihat
+                          // konten halamannya, bukan ketutup sidebar.
+                          _closeSidebar();
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Layar lebar (tablet/laptop/desktop): sidebar mendorong
+        // konten seperti sebelumnya -- ada cukup ruang untuk keduanya
+        // tampil berdampingan tanpa saling menghimpit.
+        final sidebarWidth = sidebarOpen ? 220.0 : 0.0;
         return Scaffold(
           backgroundColor: _DashColors.bg,
           body: SafeArea(
             child: Row(
               children: [
-                // Sidebar yang "bergeser" masuk/keluar dengan animasi lebar
-                // (bukan Drawer bawaan yang menumpuk di atas/di belakang
-                // konten). Konten di sebelah kanan otomatis ikut bergeser
-                // karena sidebar ini beneran memakan ruang lewat Row biasa.
                 ClipRect(
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 260),
@@ -396,80 +543,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _TopBar(
-                        title: _menuTitles[_selectedIndex],
-                        searchController: _searchController,
-                        // Tombol menu (3 garis) SELALU tampil -- di layar
-                        // lebar maupun sempit -- persis seperti admin panel
-                        // pada umumnya, supaya sidebar bisa ditarik
-                        // masuk/keluar kapan saja.
-                        showMenuButton: true,
-                        onMenuTap: _toggleSidebar,
-                        // Cari & download cuma ditampilkan di halaman Data
-                        // Pelanggan.
-                        showTools: tampilkanAlatPencarian,
-                        onSearchChanged: tampilkanAlatPencarian
-                            ? (value) => setState(() => _searchQuery = value)
-                            : null,
-                        onDownload: tampilkanAlatPencarian
-                            ? () => _handleDownload(context)
-                            : null,
-                      ),
-                      // Breadcrumb halaman yang sedang dibuka, persis di
-                      // bawah navbar -- selalu diawali "Menu" (root, bisa
-                      // diklik buat balik ke Beranda), lalu nama halaman
-                      // yang sedang aktif (Beranda/Data Pelanggan/Profil).
-                      Container(
-                        width: double.infinity,
-                        color: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: _selectedIndex == 0
-                                  ? null
-                                  : () => _selectMenu(0),
-                              child: Text(
-                                'Menu',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: _DashColors.breadcrumbMuted,
-                                ),
-                              ),
-                            ),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                '/',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: _DashColors.breadcrumbMuted,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              _menuTitles[_selectedIndex],
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.teal,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(child: _buildBody()),
-                    ],
-                  ),
-                ),
+                Expanded(child: content),
               ],
             ),
           ),
@@ -1336,7 +1410,13 @@ class _StatCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          height: 90,
+          // Sebelumnya height:90 tetap (fixed) -- kalau label seperti
+          // "Total Pelanggan" terpaksa turun ke 2 baris di layar yang
+          // sangat sempit, ini bikin overflow (lihat laporan "BOTTOM
+          // OVERFLOWED"). Diganti minHeight supaya kartu boleh sedikit
+          // lebih tinggi kalau labelnya butuh 2 baris, tapi tetap
+          // seragam ~90 kalau labelnya muat 1 baris (kasus normal).
+          constraints: const BoxConstraints(minHeight: 90),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: _gradientColors,

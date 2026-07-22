@@ -308,173 +308,225 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
 
         _syncControllersIfNeeded(profile);
 
-        // Tampilan dibuat ringkas & sempit, mirip layar HP, meskipun
-        // dibuka di layar lebar (web/desktop) — kartu tidak melebar penuh.
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 340),
+        // Responsive: di layar sempit (HP) tampilan tetap ringkas &
+        // sempit seperti semula. Di layar lebar (tablet/laptop/web)
+        // kartu ikut melebar secara proporsional (dengan batas atas
+        // supaya tidak jadi kepanjangan/kosong), padding & font sedikit
+        // membesar, dan field Username+Email disusun berdampingan
+        // supaya ruang layar besar tidak terasa kosong.
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            // Sama seperti breakpoint yang dipakai di halaman lain
+            // (mis. kartu statistik di Beranda) supaya konsisten.
+            final isWide = width >= 600;
+
+            final cardMaxWidth = isWide ? 640.0 : 340.0;
+            final cardPadding = isWide ? 24.0 : 16.0;
+            final titleSize = isWide ? 20.0 : 16.0;
+            final labelSize = isWide ? 12.0 : 11.0;
+            final fieldFontSize = isWide ? 14.0 : 13.0;
+            final fieldVerticalPadding = isWide ? 14.0 : 10.0;
+            final iconSize = isWide ? 20.0 : 18.0;
+            final fieldSpacing = isWide ? 20.0 : 12.0;
+
+            Widget fieldLabel(String text) => Text(
+              text,
+              style: TextStyle(fontSize: labelSize, color: Colors.black54),
+            );
+
+            InputDecoration fieldDecoration(IconData icon) => InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: fieldVerticalPadding,
+              ),
+              prefixIcon: Icon(icon, size: iconSize),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            );
+
+            final usernameField = SizedBox(
+              width: double.infinity,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Profil Admin',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.darkText,
-                    ),
+                  fieldLabel('Username'),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _usernameController,
+                    style: TextStyle(fontSize: fieldFontSize),
+                    decoration: fieldDecoration(Icons.person_outline),
                   ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 5,
-                          offset: const Offset(0, 2),
+                ],
+              ),
+            );
+
+            final emailField = SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  fieldLabel('Email'),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(fontSize: fieldFontSize),
+                    decoration: fieldDecoration(Icons.email_outlined),
+                  ),
+                ],
+              ),
+            );
+
+            // Di layar lebar, Username & Email berdampingan (hemat
+            // ruang vertikal & memanfaatkan lebar layar). Di layar
+            // sempit, tetap ditumpuk seperti semula.
+            final usernameEmailRow = isWide
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: usernameField),
+                      const SizedBox(width: 16),
+                      Expanded(child: emailField),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      usernameField,
+                      SizedBox(height: fieldSpacing),
+                      emailField,
+                    ],
+                  );
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isWide ? 24 : 16,
+                vertical: 20,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: cardMaxWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Profil Admin',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: titleSize,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.darkText,
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Username',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.black54,
-                          ),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: EdgeInsets.all(cardPadding),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: _usernameController,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 10,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.person_outline,
-                              size: 18,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Email',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.black54,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 10,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.email_outlined,
-                              size: 18,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Password',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.black54,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Icon(
-                              Icons.lock_outline,
-                              size: 18,
-                              color: Colors.black45,
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '••••••••',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.darkText,
+                            usernameEmailRow,
+                            SizedBox(height: fieldSpacing),
+                            fieldLabel('Password'),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.lock_outline,
+                                  size: iconSize,
+                                  color: Colors.black45,
                                 ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _handleChangePassword,
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '••••••••',
+                                    style: TextStyle(
+                                      fontSize: fieldFontSize,
+                                      color: AppColors.darkText,
+                                    ),
+                                  ),
                                 ),
-                                minimumSize: Size.zero,
-                                tapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Ganti',
-                                style: TextStyle(fontSize: 12),
+                                TextButton(
+                                  onPressed: _handleChangePassword,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: Text(
+                                    'Ganti',
+                                    style: TextStyle(
+                                      fontSize: isWide ? 13 : 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Di layar lebar tombol Simpan tidak perlu
+                            // melebar penuh (kelihatan aneh untuk sebuah
+                            // form pendek) — dibatasi & rata kanan. Di
+                            // layar sempit tetap melebar penuh seperti
+                            // semula.
+                            Align(
+                              alignment: isWide
+                                  ? Alignment.centerRight
+                                  : Alignment.center,
+                              child: SizedBox(
+                                width: isWide ? 180 : double.infinity,
+                                height: isWide ? 46 : 40,
+                                child: ElevatedButton(
+                                  onPressed: _saving ? null : _handleSave,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.teal,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                  child: _saving
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Text(
+                                          'Simpan',
+                                          style: TextStyle(
+                                            fontSize: isWide ? 14 : 13,
+                                          ),
+                                        ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 40,
-                          child: ElevatedButton(
-                            onPressed: _saving ? null : _handleSave,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.teal,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
-                            child: _saving
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Simpan',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
